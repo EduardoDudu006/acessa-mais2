@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import MapaColaborativo from "./components/MapaColaborativo";
+import FormularioOcorrencia from "./components/FormularioOcorrencia";
 
 export default function App() {
     const [abaAtiva, setAbaAtiva] = useState("Mapa");
@@ -56,9 +57,10 @@ export default function App() {
                 {abaAtiva === "Mapa" && <MapaColaborativo />}
 
                 {abaAtiva === "Registrar" && (
-                    <div style={{ backgroundColor: "#FFFFFF", padding: "24px", borderRadius: "12px" }}>
-                        <p style={{ color: "#4A5568" }}>Formulário de registro web será integrado na Fase 7.</p>
-                    </div>
+                    <FormularioOcorrencia
+                        usuarioId={1}
+                        onSucesso={() => setAbaAtiva("Mapa")}
+                    />
                 )}
             </main>
         </div>
