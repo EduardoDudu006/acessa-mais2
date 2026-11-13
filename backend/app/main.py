@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
 
-# 1. IMPORTAÇÃO DOS ROUTERS (auth e ocorrencias)
-from app.api import auth, ocorrencias
+# 1. IMPORTAÇÃO DOS ROUTERS (auth, ocorrencias e rotas)
+from app.api import auth, ocorrencias, rotas
 
 load_dotenv()
 
@@ -28,6 +28,7 @@ app.add_middleware(
 # 2. REGISTRO DOS ROUTERS NA APLICAÇÃO
 app.include_router(auth.router)
 app.include_router(ocorrencias.router)
+app.include_router(rotas.router)
 
 @app.get("/api/v1/health", tags=["Status"])
 def health_check():
