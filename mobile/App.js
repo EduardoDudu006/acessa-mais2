@@ -1,6 +1,6 @@
-import React from 'react';
-import OcorrenciaScreen from './src/screens/OcorrenciaScreen';
+import React from "react";
+import OcorrenciaScreen from "./src/screens/OcorrenciaScreen";
 
 export default function App() {
-  return <OcorrenciaScreen />;
+    return <OcorrenciaScreen />;
 }
