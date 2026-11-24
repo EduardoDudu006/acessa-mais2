@@ -1,267 +1,109 @@
-import React, { useState, useEffect } from "react";
-import {
-    StyleSheet,
-    Text,
-    View,
-    TextInput,
-    TouchableOpacity,
-    ScrollView,
-    Alert,
-    ActivityIndicator
-} from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import NetInfo from "@netinfo/netinfo"; // ou verificação nativa de rede
+# ACESSA+
 
-const STORAGE_KEY = "@acessa_mais_fila_offline";
+Plataforma colaborativa para registrar barreiras de acessibilidade urbana em Recife. O repositório contém uma API FastAPI, um site React/Vite e um aplicativo Expo.
 
-export default function OcorrenciaScreen() {
-    const [categoria, setCategoria] = useState("Calçada irregular ou buraco");
-    const [descricao, setDescricao] = useState("");
-    const [latitude, setLatitude] = useState("-8.05428");
-    const [longitude, setLongitude] = useState("-34.88130");
-    const [enviando, setEnviando] = useState(false);
-    const [isOnline, setIsOnline] = useState(true);
+## Requisitos
 
-    // Monitora a conexão de rede do dispositivo
-    useEffect(() => {
-        const unsubscribe = NetInfo.addEventListener(state => {
-            setIsOnline(state.isConnected);
-            if (state.isConnected) {
-                sincronizarFilaOffline();
-            }
-        });
-        return () => unsubscribe();
-    }, []);
+- Windows 10/11
+- Python 3.10 ou superior
+- Node.js 22.12 ou superior
 
-    // Função para sincronizar dados salvos offline quando a internet voltar
-    const sincronizarFilaOffline = async () => {
-        try {
-            const filaStr = await AsyncStorage.getItem(STORAGE_KEY);
-            if (!filaStr) return;
+## Configuração local — passo a passo
 
-            const fila = JSON.parse(filaStr);
-            if (fila.length === 0) return;
+Não é necessário instalar PostgreSQL nem Docker para testar localmente: a API usa um arquivo SQLite persistente por padrão. Abra dois terminais PowerShell na pasta do projeto.
 
-            console.log(`Sincronizando ${fila.length} registros offline...`);
+### 1. Configure e execute a API
 
-            const novosPendentes = [];
-            for (const item of fila) {
-                try {
-                    const res = await fetch("https://acessa-backend.onrender.com/api/v1/ocorrencias", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(item)
-                    });
-                    if (!res.ok) novosPendentes.push(item);
-                } catch (e) {
-                    novosPendentes.push(item); // Mantém na fila se falhar novamente
-                }
-            }
+No primeiro terminal:
 
-            await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(novosPendentes));
-            if (novosPendentes.length === 0) {
-                Alert.alert("Sincronização", "Todas as ocorrências offline foram enviadas com sucesso!");
-            }
-        } catch (error) {
-            console.error("Erro na sincronização offline:", error);
-        }
-    };
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
+```
 
-    const handleSalvarOcorrencia = async () => {
-        if (!descricao.trim()) {
-            Alert.alert("Atenção", "Por favor, insira uma descrição para o obstáculo.");
-            return;
-        }
+Gere uma chave JWT aleatória e grave no `.env`:
 
-        setEnviando(true);
-        const novaOcorrencia = {
-            categoria,
-            descricao,
-            latitude: parseFloat(latitude),
-            longitude: parseFloat(longitude),
-            usuario_id: 1
-        };
+```powershell
+$secret = python -c "import secrets; print(secrets.token_urlsafe(48))"
+(Get-Content .env) -replace '^SECRET_KEY=.*$', "SECRET_KEY=$secret" | Set-Content -Encoding ascii .env
+```
 
-        if (!isOnline) {
-            // Salva na fila offline local se estiver sem internet
-            try {
-                const filaStr = await AsyncStorage.getItem(STORAGE_KEY);
-                const fila = filaStr ? JSON.parse(filaStr) : [];
-                fila.push(novaOcorrencia);
-                await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(fila));
+Mantenha `DATABASE_URL=sqlite:///./acessa_local.db` para o modo local. Inicie a API:
 
-                Alert.alert(
-                    "Modo Offline",
-                    "Sem conexão com a internet. Sua ocorrência foi salva localmente e será enviada assim que houver sinal!"
-                );
-                setDescricao("");
-            } catch (err) {
-                Alert.alert("Erro", "Não foi possível salvar o registro offline.");
-            } finally {
-                setEnviando(false);
-            }
-            return;
-        }
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
 
-        // Envio online direto para o Backend PostGIS
-        try {
-            const res = await fetch("https://acessa-backend.onrender.com/api/v1/ocorrencias", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(novaOcorrencia)
-            });
+Endereços locais:
 
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || "Erro ao registrar ocorrência.");
+- API: <http://localhost:8000>
+- Documentação interativa: <http://localhost:8000/api/docs>
+- Verificação: <http://localhost:8000/api/v1/health>
 
-            Alert.alert("Sucesso!", `Ocorrência #${data.ocorrencia_id} registrada no mapa de Recife! (+15 pts)`);
-            setDescricao("");
-        } catch (error) {
-            Alert.alert("Erro de Conexão", error.message);
-        } finally {
-            setEnviando(false);
-        }
-    };
+Na primeira execução, a API cria as tabelas no arquivo `backend/acessa_local.db`.
 
-    return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <View style={styles.headerCard}>
-                <Text style={styles.tituloHeader}>ACESSA+ Mobile</Text>
-                <Text style={styles.subHeader}>
-                    Status de Conexão: <Text style={{ color: isOnline ? "#00A86B" : "#E53E3E" }}>{isOnline ? "Online 🟢" : "Offline 🔴 (Modo Seguro)"}</Text>
-                </Text>
-            </View>
+### 2. Configure e execute o site
 
-            <View style={styles.formGroup}>
-                <Text style={styles.label}>Categoria do Obstáculo</Text>
-                <TextInput
-                    style={styles.input}
-                    value={categoria}
-                    onChangeText={setCategoria}
-                    placeholder="Ex: Calçada irregular"
-                />
-            </View>
+No segundo terminal:
 
-            <View style={styles.formGroup}>
-                <Text style={styles.label}>Descrição e Referência</Text>
-                <TextInput
-                    style={[styles.input, { height: 90, textAlignVertical: "top" }]}
-                    multiline
-                    value={descricao}
-                    onChangeText={setDescricao}
-                    placeholder="Descreva o problema de acessibilidade encontrado..."
-                />
-            </View>
+```powershell
+cd frontend
+npm install
+$env:VITE_API_URL = "http://localhost:8000/api/v1"
+npm run dev
+```
 
-            <View style={styles.coordsContainer}>
-                <Text style={styles.coordsTitle}>Coordenadas Geográficas (Recife)</Text>
-                <View style={styles.coordsRow}>
-                    <TextInput
-                        style={[styles.input, { flex: 1 }]}
-                        value={latitude}
-                        onChangeText={setLatitude}
-                        keyboardType="numeric"
-                        placeholder="Latitude"
-                    />
-                    <TextInput
-                        style={[styles.input, { flex: 1 }]}
-                        value={longitude}
-                        onChangeText={setLongitude}
-                        keyboardType="numeric"
-                        placeholder="Longitude"
-                    />
-                </View>
-            </View>
+Abra o endereço indicado pelo Vite, normalmente <http://localhost:5173>. Crie uma conta pela própria tela inicial.
 
-            <TouchableOpacity
-                style={styles.botaoEnviar}
-                onPress={handleSalvarOcorrencia}
-                disabled={enviando}
-            >
-                {enviando ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                    <Text style={styles.textoBotao}>Registrar Ocorrência</Text>
-                )}
-            </TouchableOpacity>
-        </ScrollView>
-    );
-}
+Para produção ou outro endereço de API, defina `VITE_API_URL` antes de iniciar ou compilar o frontend. Configure também `CORS_ORIGINS` no backend com a origem exata do site, sem barra final. Exemplo:
 
-const styles = StyleSheet.create({
-    container: {
-        padding: 20,
-        backgroundColor: "#F0F4F8",
-        flexGrow: 1
-    },
-    headerCard: {
-        backgroundColor: "#0B3D91",
-        padding: 16,
-        borderRadius: 12,
-        marginBottom: 20,
-        alignItems: "center"
-    },
-    tituloHeader: {
-        color: "#FFFFFF",
-        fontSize: 20,
-        fontWeight: "900",
-        letterSpacing: 0.5
-    },
-    subHeader: {
-        color: "#E2E8F0",
-        fontSize: 13,
-        marginTop: 4
-    },
-    formGroup: {
-        marginBottom: 16
-    },
-    label: {
-        fontSize: 14,
-        fontWeight: "700",
-        color: "#0B3D91",
-        marginBottom: 6
-    },
-    input: {
-        backgroundColor: "#FFFFFF",
-        borderWidth: 1,
-        borderColor: "#CBD5E0",
-        borderRadius: 8,
-        padding: 12,
-        fontSize: 14,
-        color: "#2D3748"
-    },
-    coordsContainer: {
-        backgroundColor: "#FFFFFF",
-        padding: 14,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: "#E2E8F0",
-        marginBottom: 20
-    },
-    coordsTitle: {
-        fontSize: 13,
-        fontWeight: "700",
-        color: "#4A5568",
-        marginBottom: 8
-    },
-    coordsRow: {
-        flexDirection: "row",
-        gap: 10
-    },
-    botaoEnviar: {
-        backgroundColor: "#FF7A00",
-        padding: 16,
-        borderRadius: 10,
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 3
-    },
-    textoBotao: {
-        color: "#FFFFFF",
-        fontSize: 16,
-        fontWeight: "800"
-    }
-});y
+```text
+CORS_ORIGINS=http://localhost:5173,https://seu-dominio.example
+```
+
+### 3. Aplicativo mobile (opcional)
+
+Para Android Emulator:
+
+```powershell
+cd mobile
+npm install
+$env:EXPO_PUBLIC_API_URL = "http://10.0.2.2:8000/api/v1"
+npx expo start
+```
+
+Em um celular físico, use no lugar de `10.0.2.2` o endereço IP local do computador na rede Wi-Fi. Para iOS Simulator, normalmente use `http://localhost:8000/api/v1`. O celular e o computador precisam estar na mesma rede, e o firewall deve permitir a porta 8000.
+
+O aplicativo permite criar conta/entrar e mantém ocorrências offline por conta; a fila é enviada quando a conexão retorna.
+
+## Funcionalidades conectadas à API
+
+- Cadastro, login e sessão com token JWT.
+- Registro de ocorrências associado ao usuário autenticado.
+- Mapa e lista com ocorrências armazenadas, filtro por status e confirmação comunitária.
+- Estatísticas agregadas por status e categoria.
+- Perfil, pontuação e ranking calculados a partir dos dados do banco.
+- Busca e seleção de endereços para ocorrências e rotas; as coordenadas são resolvidas internamente.
+- Planejamento de rota com obstáculos próximos reportados.
+
+O roteamento usa o serviço público OSRM e retorna uma rota a pé. O perfil altera o tempo estimado, mas não garante que o trajeto seja acessível para cadeira de rodas. O resultado é informativo e não substitui uma auditoria presencial. O carregamento do mapa e o cálculo de rotas dependem de acesso à internet.
+
+O SQLite local calcula distâncias geográficas diretamente; em produção, use PostgreSQL com PostGIS definindo `DATABASE_URL` para `postgresql://...` e habilitando a extensão `postgis` no banco. O arquivo `compose.yaml` fornece um PostGIS opcional para desenvolvimento.
+
+A busca de endereços usa o Nominatim/OpenStreetMap, é acionada somente quando a pessoa clica em **Buscar**, mantém cache em memória e limita as consultas a no máximo uma por segundo por processo. O endereço digitado é enviado ao serviço para pesquisa; a tela mostra a atribuição ao OpenStreetMap. Configure `NOMINATIM_USER_AGENT` e, se necessário, `NOMINATIM_URL` no ambiente do backend. Para várias instâncias ou tráfego maior, use um provedor próprio/comercial compatível e respeite o limite global do serviço público.
+
+## Verificação do site
+
+```powershell
+cd frontend
+npm run build
+```
+
+## Observações para publicação
+
+- Configure `DATABASE_URL`, `SECRET_KEY` aleatória e `CORS_ORIGINS` no ambiente do servidor; nunca publique `backend/.env`.
+- Use HTTPS em produção.
+- PostgreSQL exige PostGIS habilitado; SQLite é destinado à execução local simples.
+- O backend cria tabelas automaticamente para facilitar o início local; para evolução de produção, adote migrações Alembic antes de alterar o esquema.
