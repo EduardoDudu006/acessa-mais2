@@ -2,176 +2,235 @@ import React, { useCallback, useEffect, useState } from "react";
 import { MapContainer, Marker, Polyline, Popup, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import BuscaEndereco from "./BuscaEndereco";
+import { apiRequest } from "../services/api";
 
-const API_BASE =
-  import.meta.env.VITE_API_URL || "https://acessa-backend.onrender.com/api/v1";
+const POSICAO_RECIFE = [-8.05428, -34.8813];
 
-const criarIconeStatus = (status) => {
+function criarIconeStatus(status) {
   const cores = {
-    Confirmado: "#00A86B", // Verde Inclusão
-    "Em Validação": "#FF7A00", // Laranja Transformação
-    Pendente: "#0B3D91", // Azul Tecnológico
+    Confirmado: "#00A86B",
+    "Em Validação": "#FF7A00",
+    Pendente: "#0B3D91",
     Resolvido: "#4A5568",
   };
   const cor = cores[status] || "#0B3D91";
-
   return L.divIcon({
     className: "custom-pin",
-    html: `<div aria-label="Status: ${status}" style="background-color:${cor}; width: 26px; height: 26px; border-radius: 50%; border: 3px solid #FFFFFF; box-shadow: 0 3px 6px rgba(0,0,0,0.4);"></div>`,
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
+    html: `<span aria-label="Status: ${status}" style="display:block;background:${cor};width:22px;height:22px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px #0006"></span>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
   });
-};
+}
 
-export default function MapaColaborativo({ usuarioId = 1, onPontosAtualizados }) {
+export default function MapaColaborativo({
+  modoRota = false,
+  onPontosAtualizados,
+  userId,
+}) {
   const [ocorrencias, setOcorrencias] = useState([]);
   const [filtroStatus, setFiltroStatus] = useState("");
   const [carregando, setCarregando] = useState(true);
-  const [mensagemFeedback, setMensagemFeedback] = useState("");
-
+  const [erro, setErro] = useState("");
+  const [mensagem, setMensagem] = useState("");
+  const [validandoIds, setValidandoIds] = useState(() => new Set());
+  const [origem, setOrigem] = useState(null);
+  const [destino, setDestino] = useState(null);
+  const [perfil, setPerfil] = useState("cadeira_de_rodas");
+  const [calculandoRota, setCalculandoRota] = useState(false);
   const [rotaCoordenadas, setRotaCoordenadas] = useState([]);
   const [detalhesRota, setDetalhesRota] = useState(null);
-  const [calculandoRota, setCalculandoRota] = useState(false);
 
-  const posicaoRecife = [-8.05428, -34.8813];
-
-  const buscarOcorrenciasMapa = useCallback(async () => {
+  const buscarOcorrencias = useCallback(async () => {
     setCarregando(true);
+    setErro("");
     try {
       const params = new URLSearchParams({
-        lat: String(posicaoRecife[0]),
-        lon: String(posicaoRecife[1]),
-        raio_metros: "5000",
+        lat: String(POSICAO_RECIFE[0]),
+        lon: String(POSICAO_RECIFE[1]),
+        raio_metros: "30000",
+        limite: "1000",
       });
-      if (filtroStatus) {
-        params.append("status", filtroStatus);
-      }
-
-      const res = await fetch(`${API_BASE}/ocorrencias?${params.toString()}`);
-      const data = await res.json();
-      setOcorrencias(data.ocorrencias || []);
-    } catch (err) {
-      console.error("Erro ao carregar mapa colaborativo:", err);
+      if (filtroStatus) params.set("status", filtroStatus);
+      const resultado = await apiRequest(`/ocorrencias?${params.toString()}`);
+      setOcorrencias(resultado.ocorrencias || []);
+    } catch (error) {
+      setErro(error.message);
+      setOcorrencias([]);
     } finally {
       setCarregando(false);
     }
   }, [filtroStatus]);
 
   useEffect(() => {
-    buscarOcorrenciasMapa();
-  }, [buscarOcorrenciasMapa]);
+    buscarOcorrencias();
+  }, [buscarOcorrencias]);
 
-  const handleValidar = async (ocorrenciaId) => {
+  async function validarOcorrencia(id) {
+    if (validandoIds.has(id)) return;
+
+    setValidandoIds((ids) => new Set(ids).add(id));
+    setMensagem("");
     try {
-      const res = await fetch(
-        `${API_BASE}/ocorrencias/${ocorrenciaId}/validar?usuario_id=${usuarioId}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        }
+      const resultado = await apiRequest(`/ocorrencias/${id}/validar`, {
+        method: "POST",
+      });
+      setOcorrencias((atuais) =>
+        atuais.map((ocorrencia) =>
+          ocorrencia.id === id
+            ? { ...ocorrencia, validada_por_mim: true }
+            : ocorrencia,
+        ),
       );
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || "Erro ao validar ocorrência.");
-      }
-
-      setMensagemFeedback(
-        `Ocorrência validada! Novo ICO: ${data.novo_ico}% (+5 pts)`
+      setMensagem(
+        `Confirmação validada. Confiança atual: ${resultado.novo_ico}%. Você recebeu 5 pontos.`,
       );
-      if (onPontosAtualizados && typeof data.pontos_usuario === "number") {
-        onPontosAtualizados(data.pontos_usuario);
-      }
-      buscarOcorrenciasMapa();
-      setTimeout(() => setMensagemFeedback(""), 4000);
+      onPontosAtualizados?.(resultado.pontos_usuario);
+      await buscarOcorrencias();
     } catch (error) {
-      alert(`Não foi possível validar: ${error.message}`);
+      setMensagem(error.message);
+    } finally {
+      setValidandoIds((ids) => {
+        const novosIds = new Set(ids);
+        novosIds.delete(id);
+        return novosIds;
+      });
     }
-  };
+  }
 
-  const handleCalcularRotaExemplo = async () => {
+  function capturarOrigem() {
+    if (!navigator.geolocation) {
+      setErro("Este navegador não disponibiliza geolocalização.");
+      return;
+    }
+    setErro("");
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setOrigem({
+          endereco: "Minha localização atual",
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        });
+      },
+      () => setErro("Não foi possível obter o GPS. Busque um endereço de origem."),
+      { enableHighAccuracy: true, timeout: 15000 },
+    );
+  }
+
+  async function calcularRota(event) {
+    event.preventDefault();
+    setErro("");
+    if (!origem || !destino) {
+      setErro("Busque e selecione os endereços de origem e destino.");
+      return;
+    }
+
     setCalculandoRota(true);
     try {
-      const payload = {
-        origem_lat: -8.0631,
-        origem_lon: -34.8711, // Marco Zero
-        destino_lat: -8.1175,
-        destino_lon: -34.8968, // Boa Viagem
-        perfil: "cadeira_de_rodas",
-      };
-
-      const res = await fetch(`${API_BASE}/rotas/calcular`, {
+      const resultado = await apiRequest("/rotas/calcular", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: {
+          origem_lat: origem.latitude,
+          origem_lon: origem.longitude,
+          destino_lat: destino.latitude,
+          destino_lon: destino.longitude,
+          perfil,
+        },
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || "Erro ao calcular rota.");
-      }
-
-      const coordenadasLeaflet = data.geometria.coordinates.map((coord) => [
-        coord[1],
-        coord[0],
-      ]);
-      setRotaCoordenadas(coordenadasLeaflet);
+      setRotaCoordenadas(
+        resultado.geometria.coordinates.map(([lon, lat]) => [lat, lon]),
+      );
       setDetalhesRota({
-        distancia: (data.distancia_metros / 1000).toFixed(2),
-        tempo: data.tempo_estimado_minutos,
-        obstaculos: data.obstaculos_proximos,
-        seguranca: data.avaliar_seguranca,
+        ...resultado,
+        origem: origem.endereco,
+        destino: destino.endereco,
       });
     } catch (error) {
-      alert(`Erro ao calcular rota: ${error.message}`);
+      setErro(error.message);
+      setDetalhesRota(null);
+      setRotaCoordenadas([]);
     } finally {
       setCalculandoRota(false);
     }
-  };
+  }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        gap: "14px",
-        padding: "16px",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          gap: "12px",
-          flexWrap: "wrap",
-          alignItems: "center",
-          backgroundColor: "#FFFFFF",
-          padding: "12px 16px",
-          borderRadius: "12px",
-          boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
-        }}
-      >
+    <section className="map-page">
+      <div className="section-heading">
         <div>
-          <label
-            htmlFor="filtro-status"
-            style={{
-              fontWeight: "700",
-              color: "#0B3D91",
-              fontSize: "14px",
-              marginRight: "8px",
-            }}
-          >
-            Filtrar:
-          </label>
+          <p className="eyebrow">RECIFE · PERNAMBUCO</p>
+          <h1>{modoRota ? "Rotas acessíveis" : "Mapa colaborativo"}</h1>
+          <p className="muted">
+            Ocorrências reais reportadas pela comunidade.
+          </p>
+        </div>
+        <button
+          className="button button-secondary"
+          disabled={carregando}
+          onClick={buscarOcorrencias}
+          type="button"
+        >
+          Atualizar mapa
+        </button>
+      </div>
+
+      {modoRota && (
+        <form className="panel route-form" onSubmit={calcularRota}>
+          <div className="form-section-heading">
+            <div>
+              <strong>Planejar trajeto</strong>
+              <p className="muted">
+                Busque os endereços de origem e destino. O traçado considera
+                os obstáculos confirmados no mapa.
+              </p>
+            </div>
+          </div>
+          <div className="form-grid route-coordinates">
+            <BuscaEndereco
+              id="endereco-origem"
+              label="Origem"
+              onSelect={setOrigem}
+              onUseGps={capturarOrigem}
+              placeholder="Ex.: Marco Zero, Recife"
+              value={origem}
+            />
+            <BuscaEndereco
+              id="endereco-destino"
+              label="Destino"
+              onSelect={setDestino}
+              placeholder="Ex.: Parque da Jaqueira, Recife"
+              value={destino}
+            />
+          </div>
+          <div className="route-actions">
+            <label>
+              Perfil de mobilidade
+              <select
+                onChange={(event) => setPerfil(event.target.value)}
+                value={perfil}
+              >
+                <option value="cadeira_de_rodas">Cadeira de rodas</option>
+                <option value="pe_lento">Pessoa com mobilidade reduzida</option>
+                <option value="geral">Geral</option>
+              </select>
+            </label>
+            <button
+              className="button button-primary"
+              disabled={calculandoRota}
+              type="submit"
+            >
+              {calculandoRota ? "Calculando..." : "Calcular rota"}
+            </button>
+          </div>
+        </form>
+      )}
+
+      <div className="panel map-toolbar">
+        <label>
+          Situação
           <select
-            id="filtro-status"
+            onChange={(event) => setFiltroStatus(event.target.value)}
             value={filtroStatus}
-            onChange={(e) => setFiltroStatus(e.target.value)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: "8px",
-              border: "1px solid #CBD5E0",
-              fontSize: "13px",
-              backgroundColor: "#F7FAFC",
-            }}
           >
             <option value="">Todos os status</option>
             <option value="Pendente">Pendente</option>
@@ -179,164 +238,107 @@ export default function MapaColaborativo({ usuarioId = 1, onPontosAtualizados })
             <option value="Confirmado">Confirmado</option>
             <option value="Resolvido">Resolvido</option>
           </select>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleCalcularRotaExemplo}
-          disabled={calculandoRota}
-          style={{
-            backgroundColor: "#FF7A00",
-            color: "#FFFFFF",
-            border: "none",
-            padding: "9px 14px",
-            borderRadius: "8px",
-            cursor: calculandoRota ? "not-allowed" : "pointer",
-            fontSize: "13px",
-            fontWeight: "700",
-          }}
-        >
-          {calculandoRota
-            ? "Calculando Rota..."
-            : "Simular Rota Acessível (Marco Zero → Boa Viagem)"}
-        </button>
-
-        <span
-          aria-live="polite"
-          style={{
-            fontSize: "13px",
-            color: "#4A5568",
-            fontWeight: "600",
-            marginLeft: "auto",
-          }}
-        >
-          {carregando ? "Atualizando mapa..." : `${ocorrencias.length} registros`}
+        </label>
+        <span className="muted" aria-live="polite">
+          {carregando
+            ? "Carregando ocorrências..."
+            : `${ocorrencias.length} ocorrências no mapa`}
         </span>
       </div>
 
+      {erro && (
+        <div className="notice notice-error" role="alert">
+          {erro}
+        </div>
+      )}
+      {mensagem && (
+        <div className="notice notice-info" role="status">
+          {mensagem}
+        </div>
+      )}
       {detalhesRota && (
-        <div
-          style={{
-            backgroundColor: "#EBF8FF",
-            color: "#2B6CB0",
-            padding: "10px 14px",
-            borderRadius: "8px",
-            fontWeight: "600",
-            fontSize: "13px",
-          }}
-        >
-          Rota calculada: {detalhesRota.distancia} km | Tempo est.:{" "}
-          {detalhesRota.tempo} min | Obstáculos no trajeto:{" "}
-          <b>{detalhesRota.obstaculos}</b> ({detalhesRota.seguranca})
+        <div className="notice notice-info route-result">
+          <strong>Rota calculada</strong>
+          <span>
+            De {detalhesRota.origem} até {detalhesRota.destino}
+          </span>
+          <span>
+            {(detalhesRota.distancia_metros / 1000).toFixed(2)} km ·{" "}
+            {detalhesRota.tempo_estimado_minutos} min estimados
+          </span>
+          <span>
+            {detalhesRota.obstaculos_proximos} obstáculos próximos · segurança{" "}
+            {detalhesRota.avaliar_seguranca}
+          </span>
+          <small>
+            Rota a pé fornecida pelo OSRM; não substitui avaliação presencial
+            das condições de acessibilidade.
+          </small>
         </div>
       )}
 
-      {mensagemFeedback && (
-        <div
-          role="alert"
-          style={{
-            backgroundColor: "#C6F6D5",
-            color: "#22543D",
-            padding: "10px 14px",
-            borderRadius: "8px",
-            fontWeight: "700",
-            fontSize: "13px",
-          }}
-        >
-          {mensagemFeedback}
-        </div>
-      )}
-
-      <div
-        style={{
-          height: "480px",
-          width: "100%",
-          borderRadius: "16px",
-          overflow: "hidden",
-          border: "2px solid #E2E8F0",
-        }}
-      >
+      <div className="map-frame">
         <MapContainer
-          center={posicaoRecife}
-          zoom={13}
+          center={POSICAO_RECIFE}
+          scrollWheelZoom
           style={{ height: "100%", width: "100%" }}
+          zoom={13}
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-
           {rotaCoordenadas.length > 0 && (
             <Polyline
-              positions={rotaCoordenadas}
               pathOptions={{
                 color:
-                  detalhesRota && detalhesRota.obstaculos > 0
+                  detalhesRota?.obstaculos_proximos > 0
                     ? "#E53E3E"
                     : "#00A86B",
                 weight: 6,
-                opacity: 0.85,
               }}
+              positions={rotaCoordenadas}
             />
           )}
-
-          {ocorrencias.map((oc) => (
+          {ocorrencias.map((ocorrencia) => (
             <Marker
-              key={oc.id}
-              position={[oc.latitude, oc.longitude]}
-              icon={criarIconeStatus(oc.status)}
+              icon={criarIconeStatus(ocorrencia.status)}
+              key={ocorrencia.id}
+              position={[ocorrencia.latitude, ocorrencia.longitude]}
             >
               <Popup>
-                <div
-                  style={{
-                    minWidth: "200px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "6px",
-                  }}
-                >
-                  <strong style={{ color: "#0B3D91", fontSize: "14px" }}>
-                    {oc.categoria}
-                  </strong>
-                  <p style={{ margin: "2px 0", fontSize: "12px", color: "#2D3748" }}>
-                    {oc.descricao || "Sem descrição detalhada."}
-                  </p>
-                  <div
-                    style={{
-                      fontSize: "11px",
-                      color: "#718096",
-                      borderTop: "1px solid #E2E8F0",
-                      paddingTop: "4px",
-                    }}
-                  >
-                    Status: <b>{oc.status}</b>
-                    <br />
-                    Confiança (ICO): <b>{oc.ico}%</b> | IPA: {oc.ipa}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleValidar(oc.id)}
-                    style={{
-                      backgroundColor: "#00A86B",
-                      color: "#FFFFFF",
-                      border: "none",
-                      padding: "8px 10px",
-                      borderRadius: "6px",
-                      fontSize: "12px",
-                      fontWeight: "700",
-                      cursor: "pointer",
-                      marginTop: "4px",
-                      textAlign: "center",
-                    }}
-                  >
-                    ✓ Confirmar Ocorrência (+5 pts)
-                  </button>
+                <div className="map-popup">
+                  <strong>{ocorrencia.categoria}</strong>
+                  <p>{ocorrencia.descricao || "Sem descrição."}</p>
+                  <span>
+                    {ocorrencia.status} · Confiança {ocorrencia.ico}% · IPA{" "}
+                    {ocorrencia.ipa}
+                  </span>
+                  {ocorrencia.validada_por_mim && (
+                    <p className="muted" role="status">
+                      irregularidade validada por você.
+                    </p>
+                  )}
+                  {ocorrencia.usuario_id !== userId &&
+                    !ocorrencia.validada_por_mim &&
+                    ocorrencia.status !== "Resolvido" && (
+                    <button
+                      className="button button-primary"
+                      onClick={() => validarOcorrencia(ocorrencia.id)}
+                      disabled={validandoIds.has(ocorrencia.id)}
+                      type="button"
+                    >
+                      {validandoIds.has(ocorrencia.id)
+                        ? "Enviando confirmação..."
+                        : "Confirmar ocorrência (+5 pontos)"}
+                    </button>
+                  )}
                 </div>
               </Popup>
             </Marker>
           ))}
         </MapContainer>
       </div>
-    </div>
+    </section>
   );
 }

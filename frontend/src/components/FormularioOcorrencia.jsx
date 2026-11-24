@@ -1,317 +1,186 @@
 import React, { useState } from "react";
+import BuscaEndereco from "./BuscaEndereco";
+import SeletorLocalizacao from "./SeletorLocalizacao";
+import { apiRequest } from "../services/api";
 
-const API_BASE =
-  import.meta.env.VITE_API_URL || "https://acessa-backend.onrender.com/api/v1";
+const CATEGORIAS = [
+  "Calçada irregular ou buraco",
+  "Ausência de rampa de acessibilidade",
+  "Rampa obstruída ou fora do padrão",
+  "Piso tátil danificado ou ausente",
+  "Obstáculo fixo na passagem (poste, entulho)",
+  "Semáforo sem sinal sonoro",
+];
 
-export default function FormularioOcorrencia({ usuarioId = 1, onSucesso }) {
-  const [categoria, setCategoria] = useState("Calçada irregular ou buraco");
+export default function FormularioOcorrencia({ onSucesso }) {
+  const [categoria, setCategoria] = useState(CATEGORIAS[0]);
   const [descricao, setDescricao] = useState("");
-  const [latitude, setLatitude] = useState("-8.05428");
-  const [longitude, setLongitude] = useState("-34.88130");
+  const [localizacao, setLocalizacao] = useState(null);
+  const [centroMapa, setCentroMapa] = useState(null);
   const [enviando, setEnviando] = useState(false);
-  const [feedback, setFeedback] = useState({ tipo: "", mensagem: "" });
+  const [feedback, setFeedback] = useState(null);
 
-  const capturarLocalizacaoAtual = () => {
-    if (!("geolocation" in navigator)) {
+  function selecionarLocalizacao(local, origem = "endereco") {
+    setLocalizacao(local);
+    setFeedback(null);
+    if (local && origem !== "mapa") {
+      setCentroMapa([local.latitude, local.longitude]);
+    }
+  }
+
+  function selecionarPontoNoMapa(latitude, longitude) {
+    selecionarLocalizacao(
+      {
+        endereco: "Ponto selecionado no mapa",
+        latitude,
+        longitude,
+      },
+      "mapa",
+    );
+  }
+
+  function capturarLocalizacao() {
+    if (!navigator.geolocation) {
       setFeedback({
-        tipo: "erro",
-        mensagem: "Geolocalização não suportada pelo navegador.",
+        tipo: "error",
+        mensagem: "Este navegador não disponibiliza geolocalização.",
       });
       return;
     }
 
-    setFeedback({ tipo: "info", mensagem: "Obtendo coordenadas GPS..." });
+    setFeedback({ tipo: "info", mensagem: "Obtendo sua localização..." });
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLatitude(pos.coords.latitude.toFixed(6));
-        setLongitude(pos.coords.longitude.toFixed(6));
+      ({ coords }) => {
+        selecionarLocalizacao({
+          endereco: "Minha localização atual",
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        });
         setFeedback({
-          tipo: "sucesso",
-          mensagem: "Localização atualizada com sucesso!",
+          tipo: "success",
+          mensagem: "Sua localização atual foi selecionada.",
         });
       },
-      () => {
-        setFeedback({
-          tipo: "erro",
-          mensagem:
-            "Não foi possível obter o GPS. Verifique as permissões ou digite manualmente.",
-        });
+      (error) => {
+        const mensagem =
+          error.code === error.PERMISSION_DENIED
+            ? "Permita o acesso à localização ou busque um endereço."
+            : "Não foi possível obter sua localização. Busque um endereço.";
+        setFeedback({ tipo: "error", mensagem });
       },
-      { enableHighAccuracy: true }
+      { enableHighAccuracy: true, timeout: 15000 },
     );
-  };
+  }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setEnviando(true);
-    setFeedback({ tipo: "", mensagem: "" });
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setFeedback(null);
 
-    try {
-      const payload = {
-        categoria,
-        descricao,
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude),
-        usuario_id: Number(usuarioId) || 1,
-      };
-
-      const res = await fetch(`${API_BASE}/ocorrencias`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || "Falha ao registrar ocorrência.");
-      }
-
+    if (!localizacao) {
       setFeedback({
-        tipo: "sucesso",
-        mensagem: `Ocorrência #${data.ocorrencia_id} registrada! Você ganhou +15 pontos.`,
+        tipo: "error",
+        mensagem: "Marque um ponto no mapa, selecione um endereço ou use o GPS.",
+      });
+      return;
+    }
+
+    setEnviando(true);
+    try {
+      const resultado = await apiRequest("/ocorrencias", {
+        method: "POST",
+        body: {
+          categoria,
+          descricao: descricao.trim(),
+          latitude: localizacao.latitude,
+          longitude: localizacao.longitude,
+        },
+      });
+      setFeedback({
+        tipo: "success",
+        mensagem: `Ocorrência #${resultado.ocorrencia_id} registrada. Você recebeu 15 pontos.`,
       });
       setDescricao("");
-
-      if (onSucesso) {
-        setTimeout(() => onSucesso(data), 1500);
-      }
+      onSucesso?.(resultado);
     } catch (error) {
-      setFeedback({ tipo: "erro", mensagem: error.message });
+      setFeedback({ tipo: "error", mensagem: error.message });
     } finally {
       setEnviando(false);
     }
-  };
+  }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      style={{
-        backgroundColor: "#FFFFFF",
-        padding: "24px",
-        borderRadius: "16px",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
-        maxWidth: "600px",
-        display: "flex",
-        flexDirection: "column",
-        gap: "16px",
-      }}
-    >
-      <div>
-        <label
-          htmlFor="categoria"
-          style={{
-            display: "block",
-            fontWeight: "700",
-            color: "#0B3D91",
-            marginBottom: "6px",
-          }}
-        >
-          Tipo de Obstáculo / Problema
-        </label>
-        <select
-          id="categoria"
-          value={categoria}
-          onChange={(e) => setCategoria(e.target.value)}
-          required
-          style={{
-            borderRadius: "8px",
-            border: "1px solid #CBD5E0",
-            width: "100%",
-            padding: "10px",
-            fontSize: "14px",
-          }}
-        >
-          <option value="Calçada irregular ou buraco">
-            Calçada irregular ou buraco
-          </option>
-          <option value="Ausência de rampa de acessibilidade">
-            Ausência de rampa de acessibilidade
-          </option>
-          <option value="Rampa obstruída ou fora do padrão">
-            Rampa obstruída ou fora do padrão
-          </option>
-          <option value="Piso tátil danificado ou ausente">
-            Piso tátil danificado ou ausente
-          </option>
-          <option value="Obstáculo fixo na passagem (poste, entulho)">
-            Obstáculo fixo na passagem (poste, entulho)
-          </option>
-          <option value="Semáforo sem sinal sonoro">
-            Semáforo sem sinal sonoro
-          </option>
-        </select>
+    <section className="panel content-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">MAPEAMENTO COLABORATIVO</p>
+          <h1>Registrar problema</h1>
+          <p className="muted">
+            Informe uma barreira de acessibilidade para ajudar outras pessoas.
+          </p>
+        </div>
       </div>
 
-      <div>
-        <label
-          htmlFor="descricao"
-          style={{
-            display: "block",
-            fontWeight: "700",
-            color: "#0B3D91",
-            marginBottom: "6px",
-          }}
-        >
-          Descrição e Ponto de Referência
-        </label>
-        <textarea
-          id="descricao"
-          rows="3"
-          placeholder="Ex: Rampa bloqueada por veículo estacionado próximo à Av. Conde da Boa Vista..."
-          value={descricao}
-          onChange={(e) => setDescricao(e.target.value)}
-          required
-          style={{
-            width: "100%",
-            padding: "10px",
-            borderRadius: "8px",
-            border: "1px solid #CBD5E0",
-            fontSize: "14px",
-            resize: "vertical",
-          }}
-        />
-      </div>
-
-      <div
-        style={{
-          backgroundColor: "#F7FAFC",
-          padding: "14px",
-          borderRadius: "10px",
-          border: "1px solid #E2E8F0",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "10px",
-          }}
-        >
-          <span
-            style={{ fontWeight: "700", color: "#2D3748", fontSize: "13px" }}
+      <form className="stack-form report-form" onSubmit={handleSubmit}>
+        <label>
+          Tipo de obstáculo
+          <select
+            onChange={(event) => setCategoria(event.target.value)}
+            value={categoria}
           >
-            Coordenadas Geográficas
-          </span>
-          <button
-            type="button"
-            onClick={capturarLocalizacaoAtual}
-            style={{
-              backgroundColor: "#00A86B",
-              color: "#FFFFFF",
-              border: "none",
-              padding: "6px 12px",
-              borderRadius: "6px",
-              fontSize: "12px",
-              fontWeight: "700",
-              cursor: "pointer",
-            }}
+            {CATEGORIAS.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Descrição e ponto de referência
+          <textarea
+            maxLength={2000}
+            onChange={(event) => setDescricao(event.target.value)}
+            placeholder="Descreva o problema e indique um ponto de referência."
+            required
+            rows={4}
+            value={descricao}
+          />
+        </label>
+
+        <div className="form-section">
+          <strong>Onde está o problema?</strong>
+          <p className="muted">
+            Clique no mapa ou arraste o marcador para indicar o local. Se
+            preferir, busque um endereço ou use o GPS.
+          </p>
+          <SeletorLocalizacao
+            centro={centroMapa}
+            localizacao={localizacao}
+            onSelect={selecionarPontoNoMapa}
+          />
+          <BuscaEndereco
+            id="endereco-ocorrencia"
+            label="Endereço"
+            onSelect={(local) => selecionarLocalizacao(local)}
+            onUseGps={capturarLocalizacao}
+            placeholder="Ex.: Rua da Aurora, Recife"
+            value={localizacao}
+          />
+        </div>
+
+        {feedback && (
+          <div
+            className={`notice notice-${feedback.tipo}`}
+            role={feedback.tipo === "error" ? "alert" : "status"}
           >
-            Usar Meu GPS Atual
-          </button>
-        </div>
-        <div style={{ display: "flex", gap: "12px" }}>
-          <div style={{ flex: 1 }}>
-            <label
-              htmlFor="latitude"
-              style={{
-                display: "block",
-                fontSize: "12px",
-                color: "#4A5568",
-                marginBottom: "4px",
-              }}
-            >
-              Latitude
-            </label>
-            <input
-              id="latitude"
-              type="number"
-              step="any"
-              value={latitude}
-              onChange={(e) => setLatitude(e.target.value)}
-              required
-              style={{
-                width: "100%",
-                padding: "8px",
-                borderRadius: "6px",
-                border: "1px solid #CBD5E0",
-              }}
-            />
+            {feedback.mensagem}
           </div>
-          <div style={{ flex: 1 }}>
-            <label
-              htmlFor="longitude"
-              style={{
-                display: "block",
-                fontSize: "12px",
-                color: "#4A5568",
-                marginBottom: "4px",
-              }}
-            >
-              Longitude
-            </label>
-            <input
-              id="longitude"
-              type="number"
-              step="any"
-              value={longitude}
-              onChange={(e) => setLongitude(e.target.value)}
-              required
-              style={{
-                width: "100%",
-                padding: "8px",
-                borderRadius: "6px",
-                border: "1px solid #CBD5E0",
-              }}
-            />
-          </div>
-        </div>
-      </div>
+        )}
 
-      {feedback.mensagem && (
-        <div
-          role="alert"
-          aria-live="assertive"
-          style={{
-            padding: "12px",
-            borderRadius: "8px",
-            fontSize: "13px",
-            fontWeight: "600",
-            backgroundColor:
-              feedback.tipo === "erro"
-                ? "#FED7D7"
-                : feedback.tipo === "sucesso"
-                ? "#C6F6D5"
-                : "#EBF8FF",
-            color:
-              feedback.tipo === "erro"
-                ? "#9B2C2C"
-                : feedback.tipo === "sucesso"
-                ? "#22543D"
-                : "#2B6CB0",
-          }}
-        >
-          {feedback.mensagem}
-        </div>
-      )}
-
-      <button
-        type="submit"
-        disabled={enviando}
-        style={{
-          backgroundColor: "#FF7A00",
-          color: "#FFFFFF",
-          border: "none",
-          padding: "14px",
-          borderRadius: "10px",
-          fontSize: "15px",
-          fontWeight: "800",
-          cursor: enviando ? "not-allowed" : "pointer",
-          opacity: enviando ? 0.7 : 1,
-        }}
-      >
-        {enviando ? "Registrando no Mapa..." : "Enviar Ocorrência"}
-      </button>
-    </form>
+        <button className="button button-primary" disabled={enviando}>
+          {enviando ? "Enviando ocorrência..." : "Registrar ocorrência"}
+        </button>
+      </form>
+    </section>
   );
 }

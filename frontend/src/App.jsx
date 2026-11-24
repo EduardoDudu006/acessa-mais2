@@ -1,429 +1,363 @@
-import React, { useState } from "react";
-import logoSidebar from "./assets/logo-acessa-mais.png";
+import React, { useCallback, useEffect, useState } from "react";
+import logoSidebar from "../assets/logo-acessa-mais.png";
+import Autenticacao from "./components/Autenticacao";
 import FormularioOcorrencia from "./components/FormularioOcorrencia";
 import MapaColaborativo from "./components/MapaColaborativo";
+import { apiRequest, getApiBase } from "./services/api";
+import "./App.css";
 
 const MENU_ITEMS = [
-  "Início",
-  "Mapa",
-  "Registrar Problema",
-  "Rotas Acessíveis",
-  "Ocorrências",
-  "Estatísticas",
-  "Gamificação",
-  "Perfil",
-  "Configurações",
+  ["Início", "⌂"],
+  ["Mapa", "◎"],
+  ["Registrar problema", "+"],
+  ["Rotas acessíveis", "↗"],
+  ["Ocorrências", "▤"],
+  ["Estatísticas", "▥"],
+  ["Gamificação", "★"],
+  ["Perfil", "◉"],
+  ["Configurações", "⚙"],
 ];
 
-export default function App() {
-  const [abaAtiva, setAbaAtiva] = useState("Início");
-  const [buscaDestino, setBuscaDestino] = useState("");
-  const [pontosUsuario, setPontosUsuario] = useState(320);
-  const usuarioId = 1;
+const MOBILE_PRIMARY_ITEMS = [
+  ["Início", "⌂", "Início"],
+  ["Mapa", "◎", "Mapa"],
+  ["Registrar problema", "+", "Registrar"],
+  ["Rotas acessíveis", "↗", "Rotas"],
+];
+const MOBILE_MORE_ITEMS = MENU_ITEMS.filter(
+  ([item]) => !MOBILE_PRIMARY_ITEMS.some(([principal]) => principal === item),
+);
 
-  const nivelUsuario =
-    pontosUsuario >= 500
+function lerSessaoSalva() {
+  const token = window.localStorage.getItem("acessa_token");
+  const usuarioSalvo = window.localStorage.getItem("acessa_usuario");
+  if (!token || !usuarioSalvo) return null;
+  try {
+    return { token, user: JSON.parse(usuarioSalvo) };
+  } catch {
+    window.localStorage.removeItem("acessa_token");
+    window.localStorage.removeItem("acessa_usuario");
+    return null;
+  }
+}
+
+export default function App() {
+  const [sessao, setSessao] = useState(lerSessaoSalva);
+  const [validandoSessao, setValidandoSessao] = useState(
+    () => Boolean(window.localStorage.getItem("acessa_token")),
+  );
+  const [abaAtiva, setAbaAtiva] = useState("Início");
+  const [maisMenuAberto, setMaisMenuAberto] = useState(false);
+  const [resumo, setResumo] = useState(null);
+  const [ocorrencias, setOcorrencias] = useState([]);
+  const [ranking, setRanking] = useState([]);
+  const [erroPainel, setErroPainel] = useState("");
+  const [carregandoPainel, setCarregandoPainel] = useState(false);
+  const [estadoApi, setEstadoApi] = useState("unknown");
+
+  const sair = useCallback(() => {
+    window.localStorage.removeItem("acessa_token");
+    window.localStorage.removeItem("acessa_usuario");
+    setSessao(null);
+    setMaisMenuAberto(false);
+    setResumo(null);
+    setOcorrencias([]);
+    setRanking([]);
+    setAbaAtiva("Início");
+  }, []);
+
+  useEffect(() => {
+    const token = window.localStorage.getItem("acessa_token");
+    if (!token) {
+      setValidandoSessao(false);
+      return;
+    }
+
+    apiRequest("/auth/me")
+      .then((user) => {
+        window.localStorage.setItem("acessa_usuario", JSON.stringify(user));
+        setSessao({ token, user });
+      })
+      .catch((error) => {
+        if (error.status === 401) sair();
+      })
+      .finally(() => setValidandoSessao(false));
+  }, [sair]);
+
+  const carregarDados = useCallback(async () => {
+    if (!sessao?.token) return;
+    setCarregandoPainel(true);
+    setErroPainel("");
+    const resultados = await Promise.allSettled([
+      apiRequest("/ocorrencias/resumo"),
+      apiRequest("/ocorrencias?limite=1000"),
+      apiRequest("/auth/ranking"),
+      apiRequest("/auth/me"),
+    ]);
+
+    const falha = resultados.find((resultado) => resultado.status === "rejected");
+    if (falha) setErroPainel(falha.reason.message);
+    if (resultados[0].status === "fulfilled") {
+      setResumo(resultados[0].value);
+    }
+    if (resultados[1].status === "fulfilled") {
+      setOcorrencias(resultados[1].value.ocorrencias || []);
+    }
+    if (resultados[2].status === "fulfilled") {
+      setRanking(resultados[2].value.usuarios || []);
+    }
+    if (resultados[3].status === "fulfilled") {
+      const user = resultados[3].value;
+      window.localStorage.setItem("acessa_usuario", JSON.stringify(user));
+      setSessao((atual) => (atual ? { ...atual, user } : atual));
+    }
+    setCarregandoPainel(false);
+  }, [sessao?.token]);
+
+  useEffect(() => {
+    if (sessao?.token) carregarDados();
+  }, [sessao?.token, carregarDados]);
+
+  function entrar(novaSessao) {
+    window.localStorage.setItem("acessa_token", novaSessao.token);
+    window.localStorage.setItem(
+      "acessa_usuario",
+      JSON.stringify(novaSessao.user),
+    );
+    setSessao(novaSessao);
+  }
+
+  async function verificarApi() {
+    setEstadoApi("checking");
+    try {
+      await apiRequest("/health");
+      setEstadoApi("online");
+    } catch (error) {
+      setEstadoApi(error.message);
+    }
+  }
+
+  if (validandoSessao) {
+    return <main className="loading-screen">Verificando sua sessão...</main>;
+  }
+  if (!sessao?.token) return <Autenticacao onLogin={entrar} />;
+
+  const nome = sessao.user?.nome || "Pessoa colaboradora";
+  const pontos = Number(sessao.user?.pontos || 0);
+  const nivel =
+    pontos >= 500
       ? "Guardião da Mobilidade"
-      : pontosUsuario >= 150
-      ? "Colaborador"
-      : "Explorador";
+      : pontos >= 150
+        ? "Colaborador"
+        : "Explorador";
+  const ocorrenciasUsuario = ocorrencias.filter(
+    (ocorrencia) => ocorrencia.usuario_id === sessao.user?.id,
+  );
+  const maisAtivo = MOBILE_MORE_ITEMS.some(([item]) => item === abaAtiva);
+
+  function navegarPara(aba) {
+    setAbaAtiva(aba);
+    setMaisMenuAberto(false);
+  }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        height: "100vh",
-        width: "100vw",
-        backgroundColor: "#F4F6F9",
-        fontFamily: "Inter, sans-serif",
-        overflow: "hidden",
-      }}
-    >
-      {/* SIDEBAR ESQUERDO */}
-      <aside
-        style={{
-          width: "260px",
-          backgroundColor: "#072B68",
-          color: "#FFFFFF",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          padding: "24px 16px",
-        }}
-      >
+    <div className="app-shell">
+      <aside className="sidebar">
         <div>
-          <div style={{ marginBottom: "32px", paddingLeft: "8px" }}>
-            <img
-              src={logoSidebar}
-              alt="ACESSA+"
-              style={{ width: "160px", height: "auto", objectFit: "contain" }}
-            />
-          </div>
-
-          <nav style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            {MENU_ITEMS.map((item) => (
-              <NavItem
+          <img className="sidebar-logo" src={logoSidebar} alt="ACESSA+" />
+          <nav
+            aria-label="Navegação principal"
+            className="main-nav desktop-nav"
+          >
+            {MENU_ITEMS.map(([item, icon]) => (
+              <button
+                aria-current={abaAtiva === item ? "page" : undefined}
+                className={`nav-item ${abaAtiva === item ? "active" : ""}`}
                 key={item}
-                label={item}
-                ativo={abaAtiva === item}
-                onClick={() => setAbaAtiva(item)}
-              />
+                onClick={() => navegarPara(item)}
+                type="button"
+              >
+                <span aria-hidden="true" className="nav-icon">
+                  {icon}
+                </span>
+                {item}
+              </button>
             ))}
           </nav>
         </div>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "12px",
-            padding: "10px",
-            backgroundColor: "rgba(255, 255, 255, 0.08)",
-            borderRadius: "12px",
-          }}
-        >
-          <div
-            style={{
-              width: "38px",
-              height: "38px",
-              borderRadius: "50%",
-              backgroundColor: "#FF7A00",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "14px",
-              fontWeight: "bold",
-            }}
+        <div className="sidebar-user">
+          <div className="avatar">{nome.slice(0, 1).toUpperCase()}</div>
+          <div className="sidebar-user-info">
+            <strong>{nome}</strong>
+            <span>{nivel}</span>
+            <span>{pontos} pontos</span>
+          </div>
+          <button
+            className="sidebar-logout"
+            onClick={sair}
+            title="Encerrar sessão"
+            type="button"
           >
-            EL
-          </div>
-          <div>
-            <div style={{ fontSize: "13px", fontWeight: "700" }}>
-              Eduardo Luz
-            </div>
-            <div style={{ fontSize: "11px", color: "#A0AEC0" }}>
-              Nível: {nivelUsuario}
-            </div>
-            <div
-              style={{
-                fontSize: "11px",
-                color: "#FF7A00",
-                fontWeight: "600",
-                marginTop: "2px",
-              }}
-            >
-              {pontosUsuario} pontos
-            </div>
-          </div>
+            <span aria-hidden="true">↪</span>
+            Sair
+          </button>
         </div>
       </aside>
 
-      {/* CONTEÚDO PRINCIPAL */}
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          height: "100vh",
-          overflow: "hidden",
-        }}
-      >
-        <header
-          style={{
-            height: "70px",
-            backgroundColor: "#FFFFFF",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "0 28px",
-            borderBottom: "1px solid #E2E8F0",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              backgroundColor: "#F7FAFC",
-              borderRadius: "20px",
-              padding: "8px 16px",
-              width: "350px",
-              border: "1px solid #E2E8F0",
-            }}
+      <nav aria-label="Navegação principal" className="mobile-nav">
+        {MOBILE_PRIMARY_ITEMS.map(([item, icon, label]) => (
+          <button
+            aria-current={abaAtiva === item ? "page" : undefined}
+            aria-label={item}
+            className={`nav-item ${abaAtiva === item ? "active" : ""}`}
+            key={item}
+            onClick={() => navegarPara(item)}
+            type="button"
           >
-            <span style={{ color: "#A0AEC0", marginRight: "10px" }}>🔍</span>
-            <input
-              type="text"
-              value={buscaDestino}
-              onChange={(e) => setBuscaDestino(e.target.value)}
-              placeholder="Para onde você quer ir?"
-              style={{
-                border: "none",
-                background: "transparent",
-                outline: "none",
-                width: "100%",
-                fontSize: "13px",
-                color: "#2D3748",
-              }}
-            />
-          </div>
+            <span aria-hidden="true" className="nav-icon">
+              {icon}
+            </span>
+            <span className="mobile-nav-label">{label}</span>
+          </button>
+        ))}
+        <button
+          aria-controls={maisMenuAberto ? "mobile-more-menu" : undefined}
+          aria-expanded={maisMenuAberto}
+          className={`nav-item ${maisAtivo ? "active" : ""}`}
+          onClick={() => setMaisMenuAberto((aberto) => !aberto)}
+          type="button"
+        >
+          <span aria-hidden="true" className="nav-icon">
+            •••
+          </span>
+          <span className="mobile-nav-label">Mais</span>
+        </button>
+      </nav>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-            <div style={{ position: "relative", cursor: "pointer" }}>
-              <span style={{ fontSize: "18px" }}>🔔</span>
-              <span
-                style={{
-                  position: "absolute",
-                  top: "-4px",
-                  right: "-4px",
-                  backgroundColor: "#E53E3E",
-                  color: "#FFFFFF",
-                  fontSize: "10px",
-                  fontWeight: "bold",
-                  padding: "2px 5px",
-                  borderRadius: "50%",
-                }}
+      {maisMenuAberto && (
+        <>
+          <button
+            aria-label="Fechar menu Mais"
+            className="mobile-menu-backdrop"
+            onClick={() => setMaisMenuAberto(false)}
+            type="button"
+          />
+          <nav
+            aria-label="Mais opções"
+            className="mobile-more-menu"
+            id="mobile-more-menu"
+          >
+            {MOBILE_MORE_ITEMS.map(([item, icon]) => (
+              <button
+                aria-current={abaAtiva === item ? "page" : undefined}
+                className={`mobile-more-item ${
+                  abaAtiva === item ? "active" : ""
+                }`}
+                key={item}
+                onClick={() => navegarPara(item)}
+                type="button"
               >
-                3
-              </span>
-            </div>
-            <div
-              style={{
-                width: "36px",
-                height: "36px",
-                borderRadius: "50%",
-                backgroundColor: "#0B3D91",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#FFF",
-                fontSize: "12px",
-                fontWeight: "bold",
-              }}
+                <span aria-hidden="true">{icon}</span>
+                {item}
+              </button>
+            ))}
+            <button
+              className="mobile-more-item mobile-more-logout"
+              onClick={sair}
+              type="button"
             >
-              EL
-            </div>
+              <span aria-hidden="true">↪</span>
+              Sair
+            </button>
+          </nav>
+        </>
+      )}
+
+      <div className="app-main">
+        <header className="topbar">
+          <div>
+            <span className="topbar-eyebrow">ACESSIBILIDADE URBANA</span>
+            <strong>{abaAtiva}</strong>
+          </div>
+          <div className="topbar-actions">
+            <span className="connection-indicator">
+              <span className="status-dot" />
+              Dados conectados à API
+            </span>
           </div>
         </header>
 
-        <main
-          style={{
-            flex: 1,
-            display: "flex",
-            gap: "20px",
-            padding: "20px",
-            overflowY: "auto",
-          }}
-        >
-          {abaAtiva === "Registrar Problema" ? (
-            <div style={{ flex: 1 }}>
-              <FormularioOcorrencia
-                usuarioId={usuarioId}
-                onSucesso={() => {
-                  setPontosUsuario((prev) => prev + 15);
-                  setAbaAtiva("Mapa");
-                }}
-              />
-            </div>
-          ) : abaAtiva === "Mapa" || abaAtiva === "Rotas Acessíveis" ? (
-            <div style={{ flex: 1 }}>
-              <MapaColaborativo
-                usuarioId={usuarioId}
-                onPontosAtualizados={(novosPontos) =>
-                  setPontosUsuario(novosPontos)
-                }
-              />
-            </div>
-          ) : (
-            <>
-              <div
-                style={{
-                  flex: 2.2,
-                  backgroundColor: "#E2E8F0",
-                  borderRadius: "16px",
-                  position: "relative",
-                  overflow: "hidden",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  border: "1px solid #CBD5E0",
-                  minHeight: "420px",
-                }}
+        <main className="page-content">
+          {erroPainel && (
+            <div className="notice notice-error" role="alert">
+              {erroPainel}
+              <button
+                className="inline-button"
+                onClick={carregarDados}
+                type="button"
               >
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    opacity: 0.6,
-                    background:
-                      "radial-gradient(circle, #CBD5E0 10%, #A0AEC0 90%)",
-                  }}
-                />
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "24px",
-                    left: "24px",
-                    backgroundColor: "#FFFFFF",
-                    borderRadius: "14px",
-                    padding: "16px",
-                    width: "320px",
-                    boxShadow: "0 10px 25px rgba(0,0,0,0.12)",
-                    zIndex: 10,
-                  }}
-                >
-                  <div style={{ display: "flex", gap: "12px", marginBottom: "12px" }}>
-                    <div
-                      style={{
-                        width: "70px",
-                        height: "70px",
-                        backgroundColor: "#94A3B8",
-                        borderRadius: "8px",
-                      }}
-                    />
-                    <div style={{ flex: 1 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                        }}
-                      >
-                        <h4
-                          style={{
-                            margin: 0,
-                            fontSize: "14px",
-                            fontWeight: "700",
-                            color: "#1A202C",
-                          }}
-                        >
-                          Desnível na calçada
-                        </h4>
-                        <span
-                          style={{
-                            backgroundColor: "#FED7D7",
-                            color: "#C53030",
-                            fontSize: "10px",
-                            fontWeight: "800",
-                            padding: "2px 8px",
-                            borderRadius: "6px",
-                          }}
-                        >
-                          Alta
-                        </span>
-                      </div>
-                      <p
-                        style={{
-                          fontSize: "11px",
-                          color: "#718096",
-                          margin: "2px 0 6px 0",
-                        }}
-                      >
-                        Calçada
-                      </p>
-                      <p
-                        style={{
-                          fontSize: "11px",
-                          color: "#4A5568",
-                          margin: 0,
-                          lineHeight: "1.3",
-                        }}
-                      >
-                        Desnível severo na calçada em frente ao comércio.
-                      </p>
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "11px",
-                      color: "#2F855A",
-                      fontWeight: "600",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    ✓ Confirmado por 8 pessoas
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setAbaAtiva("Mapa")}
-                    style={{
-                      width: "100%",
-                      color: "#FFFFFF",
-                      border: "none",
-                      padding: "10px",
-                      backgroundColor: "#072B68",
-                      borderRadius: "8px",
-                      fontWeight: "700",
-                      fontSize: "12px",
-                      cursor: "pointer",
-                      marginTop: "10px",
-                    }}
-                  >
-                    Ver detalhes no mapa
-                  </button>
-                </div>
-              </div>
+                Tentar novamente
+              </button>
+            </div>
+          )}
 
-              <div
-                style={{
-                  flex: 1.2,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "16px",
-                  overflowY: "auto",
-                  paddingRight: "4px",
-                }}
-              >
-                <div
-                  style={{
-                    backgroundColor: "#FFFFFF",
-                    padding: "16px",
-                    borderRadius: "14px",
-                    boxShadow: "0 2px 6px rgba(0,0,0,0.04)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: "12px",
-                    }}
-                  >
-                    <h3
-                      style={{
-                        margin: 0,
-                        fontSize: "14px",
-                        fontWeight: "800",
-                        color: "#1A202C",
-                      }}
-                    >
-                      Resumo da Cidade
-                    </h3>
-                    <span
-                      style={{
-                        fontSize: "12px",
-                        fontWeight: "600",
-                        color: "#4A5568",
-                        backgroundColor: "#EDF2F7",
-                        padding: "4px 10px",
-                        borderRadius: "8px",
-                      }}
-                    >
-                      Recife PE
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <StatCard
-                      value="1.452"
-                      label="Total de ocorrências"
-                      bg="#3182CE"
-                    />
-                    <StatCard value="987" label="Resolvidas" bg="#38A169" />
-                    <StatCard value="465" label="Pendentes" bg="#DD6B20" />
-                  </div>
-                </div>
-              </div>
-            </>
+          {abaAtiva === "Início" && (
+            <Dashboard
+              carregando={carregandoPainel}
+              nome={nome}
+              ocorrencias={ocorrencias}
+              onNavigate={navegarPara}
+              onRefresh={carregarDados}
+              resumo={resumo}
+            />
+          )}
+          {abaAtiva === "Mapa" && (
+            <MapaColaborativo
+              onPontosAtualizados={carregarDados}
+              userId={sessao.user?.id}
+            />
+          )}
+          {abaAtiva === "Registrar problema" && (
+            <FormularioOcorrencia onSucesso={carregarDados} />
+          )}
+          {abaAtiva === "Rotas acessíveis" && (
+            <MapaColaborativo
+              modoRota
+              onPontosAtualizados={carregarDados}
+              userId={sessao.user?.id}
+            />
+          )}
+          {abaAtiva === "Ocorrências" && (
+            <ListaOcorrencias
+              carregando={carregandoPainel}
+              ocorrencias={ocorrencias}
+              onRefresh={carregarDados}
+            />
+          )}
+          {abaAtiva === "Estatísticas" && (
+            <Estatisticas carregando={carregandoPainel} resumo={resumo} />
+          )}
+          {abaAtiva === "Gamificação" && (
+            <Gamificacao
+              nomeUsuario={nome}
+              pontos={pontos}
+              ranking={ranking}
+              userId={sessao.user?.id}
+            />
+          )}
+          {abaAtiva === "Perfil" && (
+            <Perfil
+              ocorrencias={ocorrenciasUsuario}
+              user={sessao.user}
+              nivel={nivel}
+            />
+          )}
+          {abaAtiva === "Configurações" && (
+            <Configuracoes
+              estadoApi={estadoApi}
+              onCheck={verificarApi}
+              sair={sair}
+            />
           )}
         </main>
       </div>
@@ -431,49 +365,400 @@ export default function App() {
   );
 }
 
-function NavItem({ label, ativo, onClick }) {
+function Dashboard({ nome, resumo, ocorrencias, carregando, onNavigate, onRefresh }) {
+  const porStatus = resumo?.por_status || {};
+  const recentes = ocorrencias.slice(0, 5);
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "12px",
-        padding: "10px 12px",
-        borderRadius: "8px",
-        border: "none",
-        width: "100%",
-        textAlign: "left",
-        backgroundColor: ativo ? "rgba(255, 255, 255, 0.12)" : "transparent",
-        color: ativo ? "#FFFFFF" : "#CBD5E0",
-        fontWeight: ativo ? "700" : "500",
-        fontSize: "13px",
-        cursor: "pointer",
-      }}
-    >
-      <span>{label}</span>
-    </button>
+    <div className="page-stack">
+      <section className="welcome-panel">
+        <div>
+          <p className="eyebrow">RECIFE MAIS ACESSÍVEL</p>
+          <h1>Olá, {nome.split(" ")[0]}.</h1>
+          <p>
+            Consulte barreiras reportadas e contribua com informações da sua
+            região.
+          </p>
+        </div>
+        <button
+          className="button button-light"
+          onClick={() => onNavigate("Registrar problema")}
+          type="button"
+        >
+          + Registrar ocorrência
+        </button>
+      </section>
+
+      <section aria-label="Resumo das ocorrências" className="stat-grid">
+        <StatCard
+          label="Ocorrências mapeadas"
+          value={resumo?.total ?? (carregando ? "…" : "—")}
+          tone="blue"
+        />
+        <StatCard
+          label="Pendentes"
+          value={porStatus.Pendente ?? (carregando ? "…" : 0)}
+          tone="orange"
+        />
+        <StatCard
+          label="Em validação"
+          value={porStatus["Em Validação"] ?? (carregando ? "…" : 0)}
+          tone="purple"
+        />
+        <StatCard
+          label="Confirmadas"
+          value={porStatus.Confirmado ?? (carregando ? "…" : 0)}
+          tone="green"
+        />
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Ocorrências recentes</h2>
+            <p className="muted">Atualizadas a partir do banco de dados.</p>
+          </div>
+          <div className="panel-actions">
+            <button
+              className="button button-secondary"
+              disabled={carregando}
+              onClick={onRefresh}
+              type="button"
+            >
+              Atualizar
+            </button>
+            <button
+              className="text-button"
+              onClick={() => onNavigate("Ocorrências")}
+              type="button"
+            >
+              Ver todas
+            </button>
+          </div>
+        </div>
+        <TabelaOcorrencias
+          carregando={carregando}
+          ocorrencias={recentes}
+          vazio="Ainda não há ocorrências registradas."
+        />
+      </section>
+    </div>
   );
 }
 
-function StatCard({ value, label, bg }) {
+function StatCard({ label, value, tone }) {
   return (
-    <div
-      style={{
-        flex: 1,
-        backgroundColor: bg,
-        borderRadius: "10px",
-        padding: "12px",
-        color: "#FFFFFF",
-      }}
-    >
-      <div style={{ fontSize: "18px", fontWeight: "900", marginBottom: "2px" }}>
-        {value}
+    <article className={`stat-card tone-${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function ListaOcorrencias({ ocorrencias, carregando, onRefresh }) {
+  const [filtro, setFiltro] = useState("");
+  const filtradas = ocorrencias.filter(
+    (ocorrencia) => !filtro || ocorrencia.status === filtro,
+  );
+  return (
+    <section className="panel content-panel">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">DADOS DA COMUNIDADE</p>
+          <h1>Ocorrências</h1>
+          <p className="muted">
+            {ocorrencias.length} registros carregados da API.
+          </p>
+        </div>
+        <div className="panel-actions">
+          <label className="compact-label">
+            Status
+            <select
+              onChange={(event) => setFiltro(event.target.value)}
+              value={filtro}
+            >
+              <option value="">Todos</option>
+              <option value="Pendente">Pendente</option>
+              <option value="Em Validação">Em validação</option>
+              <option value="Confirmado">Confirmado</option>
+              <option value="Resolvido">Resolvido</option>
+            </select>
+          </label>
+          <button
+            className="button button-secondary"
+            disabled={carregando}
+            onClick={onRefresh}
+            type="button"
+          >
+            Atualizar
+          </button>
+        </div>
       </div>
-      <div style={{ fontSize: "10px", opacity: 0.9, lineHeight: "1.2" }}>
-        {label}
+      <TabelaOcorrencias
+        carregando={carregando}
+        ocorrencias={filtradas}
+        vazio="Não há ocorrências para este filtro."
+      />
+    </section>
+  );
+}
+
+function TabelaOcorrencias({ ocorrencias, carregando, vazio }) {
+  if (carregando && ocorrencias.length === 0) {
+    return <p className="empty-state">Carregando dados da API...</p>;
+  }
+  if (ocorrencias.length === 0) {
+    return <p className="empty-state">{vazio}</p>;
+  }
+
+  const linhas = ocorrencias.map((ocorrencia) => ({
+    ...ocorrencia,
+    descricao: ocorrencia.descricao || "Sem descrição",
+    classeStatus: `status-pill status-${ocorrencia.status
+      .toLowerCase()
+      .replaceAll(" ", "-")}`,
+    data: ocorrencia.criado_em
+      ? new Date(ocorrencia.criado_em).toLocaleDateString("pt-BR")
+      : "—",
+  }));
+
+  return (
+    <>
+      <ul aria-label="Lista de ocorrências" className="mobile-occurrence-list">
+        {linhas.map((linha) => (
+          <li className="mobile-occurrence-card" key={linha.id}>
+            <div className="mobile-occurrence-main">
+              <strong>{linha.categoria}</strong>
+              <p>{linha.descricao}</p>
+            </div>
+            <dl className="mobile-occurrence-meta">
+              <div>
+                <dt>Situação</dt>
+                <dd>
+                  <span className={linha.classeStatus}>{linha.status}</span>
+                </dd>
+              </div>
+              <div>
+                <dt>Prioridade</dt>
+                <dd>{linha.ipa}/10</dd>
+              </div>
+              <div>
+                <dt>Data</dt>
+                <dd>{linha.data}</dd>
+              </div>
+            </dl>
+          </li>
+        ))}
+      </ul>
+
+      <div className="table-scroll desktop-occurrence-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Problema</th>
+              <th>Situação</th>
+              <th>Prioridade</th>
+              <th>Data</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((linha) => (
+              <tr key={linha.id}>
+                <td>
+                  <strong>{linha.categoria}</strong>
+                  <span className="table-description">{linha.descricao}</span>
+                </td>
+                <td>
+                  <span className={linha.classeStatus}>{linha.status}</span>
+                </td>
+                <td>{linha.ipa}/10</td>
+                <td>{linha.data}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
+    </>
+  );
+}
+
+function Estatisticas({ resumo, carregando }) {
+  const total = resumo?.total || 0;
+  const categorias = resumo?.por_categoria || [];
+  return (
+    <div className="page-stack">
+      <section className="section-heading">
+        <div>
+          <p className="eyebrow">DADOS ATUALIZADOS</p>
+          <h1>Estatísticas</h1>
+          <p className="muted">
+            Totais calculados a partir das ocorrências armazenadas.
+          </p>
+        </div>
+      </section>
+      {carregando && !resumo ? (
+        <p className="empty-state">Carregando estatísticas...</p>
+      ) : (
+        <>
+          <section className="stat-grid">
+            <StatCard label="Total" value={total} tone="blue" />
+            {Object.entries(resumo?.por_status || {}).map(
+              ([status, quantidade], index) => (
+                <StatCard
+                  key={status}
+                  label={status}
+                  value={quantidade}
+                  tone={["orange", "purple", "green", "blue"][index % 4]}
+                />
+              ),
+            )}
+          </section>
+          <section className="panel content-panel">
+            <h2>Ocorrências por categoria</h2>
+            {categorias.length === 0 ? (
+              <p className="empty-state">Ainda não há dados para exibir.</p>
+            ) : (
+              <div className="category-list">
+                {categorias.map((item) => (
+                  <div className="category-row" key={item.categoria}>
+                    <span>{item.categoria}</span>
+                    <strong>{item.quantidade}</strong>
+                    <div className="bar-track">
+                      <span
+                        style={{
+                          width: `${total ? (item.quantidade / total) * 100 : 0}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
     </div>
+  );
+}
+
+function Gamificacao({ ranking, userId, nomeUsuario, pontos }) {
+  return (
+    <div className="page-stack">
+      <section className="welcome-panel gamification-panel">
+        <div>
+          <p className="eyebrow">CONTRIBUIÇÃO COMUNITÁRIA</p>
+          <h1>Pontos e reconhecimento</h1>
+          <p>
+            Ganhe 15 pontos ao registrar uma ocorrência e 5 ao validar uma
+            ocorrência de outra pessoa.
+          </p>
+        </div>
+        <div className="score-block">
+          <strong>{pontos}</strong>
+          <span>seus pontos</span>
+        </div>
+      </section>
+      <section className="panel content-panel">
+        <h2>Ranking da comunidade</h2>
+        {ranking.length === 0 ? (
+          <p className="empty-state">Ainda não há participantes no ranking.</p>
+        ) : (
+          <ol className="ranking-list">
+            {ranking.map((usuario, index) => (
+              <li
+                className={usuario.id === userId ? "ranking-current" : ""}
+                key={usuario.id}
+              >
+                <span className="ranking-position">{index + 1}</span>
+                <span className="ranking-name">
+                  {usuario.nome}
+                  {usuario.id === userId && (
+                    <small>Você ({nomeUsuario})</small>
+                  )}
+                </span>
+                <strong>{usuario.pontos} pts</strong>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function Perfil({ user, ocorrencias, nivel }) {
+  return (
+    <section className="panel content-panel profile-panel">
+      <p className="eyebrow">SUA CONTA</p>
+      <h1>Perfil</h1>
+      <div className="profile-details">
+        <div>
+          <span>Nome</span>
+          <strong>{user?.nome}</strong>
+        </div>
+        <div>
+          <span>E-mail</span>
+          <strong>{user?.email}</strong>
+        </div>
+        <div>
+          <span>Nível</span>
+          <strong>{nivel}</strong>
+        </div>
+        <div>
+          <span>Ocorrências registradas</span>
+          <strong>{ocorrencias.length}</strong>
+        </div>
+        <div>
+          <span>Pontos</span>
+          <strong>{user?.pontos || 0}</strong>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Configuracoes({ estadoApi, onCheck, sair }) {
+  return (
+    <section className="panel content-panel">
+      <p className="eyebrow">APLICAÇÃO</p>
+      <h1>Configurações</h1>
+      <div className="settings-list">
+        <div>
+          <strong>Endereço da API</strong>
+          <code>{getApiBase()}</code>
+          <p className="muted">
+            Configure VITE_API_URL no ambiente do frontend para alterar o
+            servidor.
+          </p>
+        </div>
+        <div>
+          <strong>Conexão com o servidor</strong>
+          <span>
+            {estadoApi === "online"
+              ? "API online"
+              : estadoApi === "checking"
+                ? "Verificando..."
+                : estadoApi === "unknown"
+                  ? "Ainda não verificada"
+                  : estadoApi}
+          </span>
+          <button
+            className="button button-secondary"
+            disabled={estadoApi === "checking"}
+            onClick={onCheck}
+            type="button"
+          >
+            Testar conexão
+          </button>
+        </div>
+        <div>
+          <strong>Sessão</strong>
+          <span>Encerre sua sessão neste dispositivo.</span>
+          <button className="button button-danger" onClick={sair} type="button">
+            Sair da conta
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
