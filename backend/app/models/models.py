@@ -1,7 +1,16 @@
 from geoalchemy2 import Geometry
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.sql import func
-from app.core.database import Base
+from app.core.database import Base, IS_SQLITE
 
 
 class Usuario(Base):
@@ -24,6 +33,30 @@ class Ocorrencia(Base):
     status = Column(String(50), default="Pendente", nullable=False)  # Pendente, Em Validação, Confirmado, Resolvido
     ico = Column(Float, default=0.0, nullable=False)  # Índice de Confiança da Ocorrência
     ipa = Column(Float, default=0.0, nullable=False)  # Índice de Prioridade de Acessibilidade
-    geom = Column(Geometry(geometry_type="POINT", srid=4326), nullable=False)
+    if IS_SQLITE:
+        latitude = Column(Float, nullable=False)
+        longitude = Column(Float, nullable=False)
+    else:
+        geom = Column(Geometry(geometry_type="POINT", srid=4326), nullable=False)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    criado_em = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ValidacaoOcorrencia(Base):
+    __tablename__ = "validacoes_ocorrencias"
+    __table_args__ = (
+        UniqueConstraint(
+            "ocorrencia_id",
+            "usuario_id",
+            name="uq_validacao_ocorrencia_usuario",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    ocorrencia_id = Column(
+        Integer,
+        ForeignKey("ocorrencias.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     criado_em = Column(DateTime(timezone=True), server_default=func.now())

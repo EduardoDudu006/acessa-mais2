@@ -1,13 +1,20 @@
+import os
 from dotenv import load_dotenv
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, ocorrencias, rotas
-from app.core.database import Base, engine
-from app.models import models  # noqa: F401
 
 load_dotenv()
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.api import auth, localizacoes, ocorrencias, rotas
+from app.core.database import Base, engine
+from app.models import models  # noqa: F401
+
 Base.metadata.create_all(bind=engine)
+origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
 
 app = FastAPI(
     title="ACESSA+ API",
@@ -19,13 +26,14 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(auth.router)
+app.include_router(localizacoes.router)
 app.include_router(ocorrencias.router)
 app.include_router(rotas.router)
 

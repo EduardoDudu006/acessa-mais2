@@ -2,20 +2,21 @@ from typing import Optional
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 from geoalchemy2.functions import ST_DWithin, ST_MakePoint, ST_SetSRID
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.core.database import get_db
+from app.core.database import get_db, IS_SQLITE
+from app.core.geo import distancia_metros
 from app.models.models import Ocorrencia
 
 router = APIRouter(prefix="/api/v1/rotas", tags=["Rotas Acessíveis"])
 
 
 class RotaRequest(BaseModel):
-    origem_lat: float
-    origem_lon: float
-    destino_lat: float
-    destino_lon: float
+    origem_lat: float = Field(ge=-90, le=90)
+    origem_lon: float = Field(ge=-180, le=180)
+    destino_lat: float = Field(ge=-90, le=90)
+    destino_lon: float = Field(ge=-180, le=180)
     perfil: Optional[str] = "cadeira_de_rodas"  # cadeira_de_rodas, pe_lento, geral
 
 
@@ -42,23 +43,46 @@ def calcular_rota_acessivel(payload: RotaRequest, db: Session = Depends(get_db))
         geometria_geojson = rota_principal["geometry"]
         coordenadas_trajeto = geometria_geojson["coordinates"]  # Lista de [lon, lat]
 
-        obstaculos_no_caminho = 0
-        for lon, lat in coordenadas_trajeto[::5]:
-            ponto_analise = func.ST_SetSRID(func.ST_MakePoint(lon, lat), 4326)
-            conflito = (
+        obstaculos_encontrados = set()
+        if IS_SQLITE:
+            ocorrencias_confirmadas = (
                 db.query(Ocorrencia)
-                .filter(
-                    Ocorrencia.status.in_(["Confirmado", "Em Validação"]),
-                    func.ST_DWithin(
-                        func.Geography(Ocorrencia.geom),
-                        func.Geography(ponto_analise),
-                        15,
-                    ),
-                )
-                .first()
+                .filter(Ocorrencia.status.in_(["Confirmado", "Em Validação"]))
+                .all()
             )
-            if conflito:
-                obstaculos_no_caminho += 1
+            for lon, lat in coordenadas_trajeto[::5]:
+                for ocorrencia in ocorrencias_confirmadas:
+                    if (
+                        distancia_metros(
+                            lat,
+                            lon,
+                            ocorrencia.latitude,
+                            ocorrencia.longitude,
+                        )
+                        <= 15
+                    ):
+                        obstaculos_encontrados.add(ocorrencia.id)
+        else:
+            for lon, lat in coordenadas_trajeto[::5]:
+                ponto_analise = func.ST_SetSRID(
+                    func.ST_MakePoint(lon, lat),
+                    4326,
+                )
+                conflito = (
+                    db.query(Ocorrencia.id)
+                    .filter(
+                        Ocorrencia.status.in_(["Confirmado", "Em Validação"]),
+                        func.ST_DWithin(
+                            func.Geography(Ocorrencia.geom),
+                            func.Geography(ponto_analise),
+                            15,
+                        ),
+                    )
+                    .first()
+                )
+                if conflito:
+                    obstaculos_encontrados.add(conflito.id)
+        obstaculos_no_caminho = len(obstaculos_encontrados)
 
         fator_velocidade = {
             "cadeira_de_rodas": 1.15,

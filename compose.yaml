@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: acessamais_db
+      POSTGRES_USER: acessa
+      POSTGRES_PASSWORD: local_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - acessa_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U acessa -d acessamais_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  acessa_postgres_data:
