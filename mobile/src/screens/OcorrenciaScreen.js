@@ -16,6 +16,13 @@ import { apiRequest } from "../services/api";
 const STORAGE_KEY = "@acessa_mais_fila_offline";
 
 export default function OcorrenciaScreen() {
+    const [usuario, setUsuario] = useState(null);
+    const [sessaoCarregando, setSessaoCarregando] = useState(true);
+    const [modoCadastro, setModoCadastro] = useState(false);
+    const [nome, setNome] = useState("");
+    const [email, setEmail] = useState("");
+    const [senha, setSenha] = useState("");
+    const [erroAutenticacao, setErroAutenticacao] = useState("");
     const [categoria, setCategoria] = useState("Calçada irregular ou buraco");
     const [descricao, setDescricao] = useState("");
     const [latitude, setLatitude] = useState("-8.05428");
@@ -23,9 +30,74 @@ export default function OcorrenciaScreen() {
     const [enviando, setEnviando] = useState(false);
     const [isOnline, setIsOnline] = useState(true);
 
-    const sincronizarFilaOffline = useCallback(async () => {
+    useEffect(() => {
+        async function restaurarSessao() {
+            const token = await AsyncStorage.getItem("acessa_token");
+            const usuarioSalvo = await AsyncStorage.getItem("acessa_usuario");
+            if (!token) {
+                setSessaoCarregando(false);
+                return;
+            }
+            if (usuarioSalvo) {
+                try {
+                    setUsuario(JSON.parse(usuarioSalvo));
+                } catch (_error) {
+                    await AsyncStorage.removeItem("acessa_usuario");
+                }
+            }
+            try {
+                const perfil = await apiRequest("/auth/me");
+                await AsyncStorage.setItem(
+                    "acessa_usuario",
+                    JSON.stringify(perfil),
+                );
+                setUsuario(perfil);
+            } catch (error) {
+                if (error.status === 401) {
+                    await AsyncStorage.multiRemove([
+                        "acessa_token",
+                        "acessa_usuario",
+                    ]);
+                    setUsuario(null);
+                }
+            } finally {
+                setSessaoCarregando(false);
+            }
+        }
+        restaurarSessao();
+    }, []);
+
+    const handleAutenticacao = async () => {
+        setErroAutenticacao("");
         try {
-            const filaStr = await AsyncStorage.getItem(STORAGE_KEY);
+            const resultado = await apiRequest(
+                modoCadastro ? "/auth/register" : "/auth/login",
+                "POST",
+                modoCadastro
+                    ? { nome: nome.trim(), email: email.trim(), senha }
+                    : { email: email.trim(), senha },
+                null,
+            );
+            await AsyncStorage.multiSet([
+                ["acessa_token", resultado.access_token],
+                ["acessa_usuario", JSON.stringify(resultado.usuario)],
+            ]);
+            setUsuario(resultado.usuario);
+        } catch (error) {
+            setErroAutenticacao(error.message);
+        }
+    };
+
+    const handleSair = async () => {
+        await AsyncStorage.multiRemove(["acessa_token", "acessa_usuario"]);
+        setUsuario(null);
+    };
+
+    const sincronizarFilaOffline = useCallback(async () => {
+        if (!usuario) return;
+        try {
+            const chaveFila = `${STORAGE_KEY}_${usuario.id}`;
+            const filaStr = await AsyncStorage.getItem(chaveFila);
             if (!filaStr) return;
 
             const fila = JSON.parse(filaStr);
@@ -41,7 +113,7 @@ export default function OcorrenciaScreen() {
             }
 
             await AsyncStorage.setItem(
-                STORAGE_KEY,
+                chaveFila,
                 JSON.stringify(novosPendentes),
             );
             if (novosPendentes.length === 0) {
@@ -53,7 +125,7 @@ export default function OcorrenciaScreen() {
         } catch (error) {
             console.error("Erro na sincronização offline:", error);
         }
-    }, []);
+    }, [usuario]);
 
     useEffect(() => {
         const unsubscribe = NetInfo.addEventListener((state) => {
@@ -65,6 +137,87 @@ export default function OcorrenciaScreen() {
         });
         return () => unsubscribe();
     }, [sincronizarFilaOffline]);
+
+    if (sessaoCarregando) {
+        return (
+            <View style={styles.authContainer}>
+                <ActivityIndicator color="#0B3D91" />
+                <Text style={styles.authSubtitle}>Verificando sua conta...</Text>
+            </View>
+        );
+    }
+
+    if (!usuario) {
+        return (
+            <ScrollView contentContainerStyle={styles.authContainer}>
+                <View style={styles.authCard}>
+                    <Text style={styles.tituloHeader}>ACESSA+ Mobile</Text>
+                    <Text style={styles.authSubtitle}>
+                        {modoCadastro
+                            ? "Crie sua conta para contribuir com o mapa."
+                            : "Entre para acessar o mapa colaborativo."}
+                    </Text>
+                    {modoCadastro && (
+                        <TextInput
+                            style={styles.input}
+                            value={nome}
+                            onChangeText={setNome}
+                            placeholder="Nome"
+                            autoComplete="name"
+                            maxLength={100}
+                        />
+                    )}
+                    <TextInput
+                        style={styles.input}
+                        value={email}
+                        onChangeText={setEmail}
+                        placeholder="E-mail"
+                        autoCapitalize="none"
+                        autoComplete="email"
+                        keyboardType="email-address"
+                    />
+                    <TextInput
+                        style={styles.input}
+                        value={senha}
+                        onChangeText={setSenha}
+                        placeholder={
+                            modoCadastro
+                                ? "Senha (mínimo 8 caracteres)"
+                                : "Senha"
+                        }
+                        secureTextEntry
+                        autoComplete={
+                            modoCadastro ? "new-password" : "current-password"
+                        }
+                    />
+                    {Boolean(erroAutenticacao) && (
+                        <Text style={styles.authError}>{erroAutenticacao}</Text>
+                    )}
+                    <TouchableOpacity
+                        style={styles.botaoEnviar}
+                        onPress={handleAutenticacao}
+                    >
+                        <Text style={styles.textoBotao}>
+                            {modoCadastro ? "Criar conta" : "Entrar"}
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.authSwitch}
+                        onPress={() => {
+                            setErroAutenticacao("");
+                            setModoCadastro((atual) => !atual);
+                        }}
+                    >
+                        <Text style={styles.authSwitchText}>
+                            {modoCadastro
+                                ? "Já tem conta? Entrar"
+                                : "Criar uma conta"}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            </ScrollView>
+        );
+    }
 
     const handleSalvarOcorrencia = async () => {
         if (!descricao.trim()) {
@@ -81,15 +234,18 @@ export default function OcorrenciaScreen() {
             descricao,
             latitude: parseFloat(latitude),
             longitude: parseFloat(longitude),
-            usuario_id: 1,
         };
 
         if (!isOnline) {
             try {
-                const filaStr = await AsyncStorage.getItem(STORAGE_KEY);
+                const chaveFila = `${STORAGE_KEY}_${usuario.id}`;
+                const filaStr = await AsyncStorage.getItem(chaveFila);
                 const fila = filaStr ? JSON.parse(filaStr) : [];
                 fila.push(novaOcorrencia);
-                await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(fila));
+                await AsyncStorage.setItem(
+                    chaveFila,
+                    JSON.stringify(fila),
+                );
                 Alert.alert(
                     "Modo Offline",
                     "Sem conexão com a internet. Sua ocorrência foi salva localmente e será enviada assim que houver sinal!",
@@ -129,10 +285,16 @@ export default function OcorrenciaScreen() {
             <View style={styles.headerCard}>
                 <Text style={styles.tituloHeader}>ACESSA+ Mobile</Text>
                 <Text style={styles.subHeader}>
+                    Olá, {usuario.nome} · {usuario.pontos} pontos
+                </Text>
+                <Text style={styles.subHeader}>
                     Status:{" "}
                     <Text style={{ color: isOnline ? "#00A86B" : "#E53E3E" }}>
                         {isOnline ? "Online ●" : "Offline ○"}
                     </Text>
+                    <TouchableOpacity onPress={handleSair}>
+                        <Text style={styles.authLogoutText}>Sair da conta</Text>
+                    </TouchableOpacity>
                 </Text>
             </View>
 
@@ -198,6 +360,46 @@ export default function OcorrenciaScreen() {
 }
 
 const styles = StyleSheet.create({
+    authContainer: {
+        padding: 20,
+        backgroundColor: "#F0F4F8",
+        flexGrow: 1,
+        justifyContent: "center",
+    },
+    authCard: {
+        width: "100%",
+        maxWidth: 480,
+        alignSelf: "center",
+        gap: 14,
+        padding: 22,
+        borderRadius: 14,
+        backgroundColor: "#FFFFFF",
+    },
+    authSubtitle: {
+        marginBottom: 8,
+        color: "#4A5568",
+        fontSize: 14,
+        textAlign: "center",
+    },
+    authError: {
+        color: "#9B2C2C",
+        fontSize: 13,
+    },
+    authSwitch: {
+        alignItems: "center",
+        padding: 8,
+    },
+    authSwitchText: {
+        color: "#0B3D91",
+        fontSize: 13,
+        fontWeight: "700",
+    },
+    authLogoutText: {
+        color: "#FFFFFF",
+        fontSize: 13,
+        fontWeight: "700",
+        marginTop: 8,
+    },
     container: {
         padding: 20,
         backgroundColor: "#F0F4F8",
