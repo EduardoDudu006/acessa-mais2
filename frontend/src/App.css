@@ -215,30 +215,6 @@ button:disabled {
   letter-spacing: 0.11em;
 }
 
-.topbar-actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 18px;
-}
-
-.connection-indicator {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 7px;
-  color: #59708d;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #00a86b;
-}
-
 .page-content {
   width: min(100%, 1500px);
   margin: 0 auto;
@@ -995,17 +971,8 @@ textarea {
 }
 
 .profile-details > div,
-.settings-list > div {
-  display: grid;
-  justify-items: start;
-  gap: 7px;
-  padding: 16px;
-  border: 1px solid #e8edf3;
-  border-radius: 10px;
-}
-
 .profile-details span,
-.settings-list span {
+.settings-account-details dt {
   color: #77869a;
   font-size: 12px;
 }
@@ -1015,25 +982,74 @@ textarea {
   font-size: 14px;
 }
 
-.settings-list {
+.settings-grid {
   display: grid;
-  gap: 12px;
-  margin-top: 20px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
 }
 
-.settings-list code {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  color: #1754a1;
-  font-size: 12px;
+.settings-page .eyebrow {
+  color: #008a5a;
 }
 
-.settings-list p {
+.settings-card {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.65fr) minmax(0, 2fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 14px 18px;
+  border-left: 3px solid #00a86b;
+}
+
+.settings-card-title {
+  margin: 0;
+  color: #173a6e;
+  font-size: 17px;
+}
+
+.settings-card-description {
   margin: 0;
 }
 
-.settings-list .button {
-  margin-top: 3px;
+.settings-account-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+}
+
+.settings-account-details > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-account-details dt {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.settings-account-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #263d5a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+@media (max-width: 700px) {
+  .settings-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .settings-account-details {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
 }
 
 .auth-page,
@@ -1273,14 +1289,6 @@ textarea {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .connection-indicator {
-    display: none;
-  }
-
-  .topbar-actions {
-    display: none;
   }
 
   .page-content {
@@ -1536,11 +1544,6 @@ textarea {
 
   .topbar-eyebrow {
     font-size: 9px;
-  }
-
-  .topbar-actions .button {
-    min-height: 38px;
-    padding: 7px 10px;
   }
 
   .stat-card {

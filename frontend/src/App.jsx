@@ -3,7 +3,7 @@ import logoSidebar from "../assets/logo-acessa-mais.png";
 import Autenticacao from "./components/Autenticacao";
 import FormularioOcorrencia from "./components/FormularioOcorrencia";
 import MapaColaborativo from "./components/MapaColaborativo";
-import { apiRequest, getApiBase } from "./services/api";
+import { apiRequest } from "./services/api";
 import "./App.css";
 
 const MENU_ITEMS = [
@@ -53,7 +53,6 @@ export default function App() {
   const [ranking, setRanking] = useState([]);
   const [erroPainel, setErroPainel] = useState("");
   const [carregandoPainel, setCarregandoPainel] = useState(false);
-  const [estadoApi, setEstadoApi] = useState("unknown");
 
   const sair = useCallback(() => {
     window.localStorage.removeItem("acessa_token");
@@ -125,16 +124,6 @@ export default function App() {
       JSON.stringify(novaSessao.user),
     );
     setSessao(novaSessao);
-  }
-
-  async function verificarApi() {
-    setEstadoApi("checking");
-    try {
-      await apiRequest("/health");
-      setEstadoApi("online");
-    } catch (error) {
-      setEstadoApi(error.message);
-    }
   }
 
   if (validandoSessao) {
@@ -279,12 +268,6 @@ export default function App() {
             <span className="topbar-eyebrow">ACESSIBILIDADE URBANA</span>
             <strong>{abaAtiva}</strong>
           </div>
-          <div className="topbar-actions">
-            <span className="connection-indicator">
-              <span className="status-dot" />
-              Dados conectados à API
-            </span>
-          </div>
         </header>
 
         <main className="page-content">
@@ -354,9 +337,9 @@ export default function App() {
           )}
           {abaAtiva === "Configurações" && (
             <Configuracoes
-              estadoApi={estadoApi}
-              onCheck={verificarApi}
+              onNavigate={navegarPara}
               sair={sair}
+              user={sessao.user}
             />
           )}
         </main>
@@ -717,48 +700,73 @@ function Perfil({ user, ocorrencias, nivel }) {
   );
 }
 
-function Configuracoes({ estadoApi, onCheck, sair }) {
+function Configuracoes({ user, onNavigate, sair }) {
   return (
-    <section className="panel content-panel">
-      <p className="eyebrow">APLICAÇÃO</p>
-      <h1>Configurações</h1>
-      <div className="settings-list">
+    <div className="page-stack settings-page">
+      <div className="section-heading settings-heading">
         <div>
-          <strong>Endereço da API</strong>
-          <code>{getApiBase()}</code>
+          <p className="eyebrow">CONTA E PREFERÊNCIAS</p>
+          <h1>Configurações</h1>
           <p className="muted">
-            Configure VITE_API_URL no ambiente do frontend para alterar o
-            servidor.
+            Gerencie suas informações e a sessão neste dispositivo.
           </p>
         </div>
-        <div>
-          <strong>Conexão com o servidor</strong>
-          <span>
-            {estadoApi === "online"
-              ? "API online"
-              : estadoApi === "checking"
-                ? "Verificando..."
-                : estadoApi === "unknown"
-                  ? "Ainda não verificada"
-                  : estadoApi}
-          </span>
+      </div>
+
+      <div className="settings-grid">
+        <section aria-labelledby="settings-account-title" className="panel settings-card">
+          <h2 className="settings-card-title" id="settings-account-title">
+            Minha conta
+          </h2>
+          <dl className="settings-account-details">
+            <div>
+              <dt>Nome</dt>
+              <dd>{user?.nome || "—"}</dd>
+            </div>
+            <div>
+              <dt>E-mail</dt>
+              <dd>{user?.email || "—"}</dd>
+            </div>
+          </dl>
           <button
             className="button button-secondary"
-            disabled={estadoApi === "checking"}
-            onClick={onCheck}
+            onClick={() => onNavigate("Perfil")}
             type="button"
           >
-            Testar conexão
+            Ver meu perfil
           </button>
-        </div>
-        <div>
-          <strong>Sessão</strong>
-          <span>Encerre sua sessão neste dispositivo.</span>
+        </section>
+
+        <section aria-labelledby="settings-preferences-title" className="panel settings-card">
+          <h2 className="settings-card-title" id="settings-preferences-title">
+            Preferências
+          </h2>
+          <p className="muted settings-card-description">
+            Ainda não há preferências personalizáveis disponíveis.
+          </p>
+        </section>
+
+        <section aria-labelledby="settings-security-title" className="panel settings-card">
+          <h2 className="settings-card-title" id="settings-security-title">
+            Segurança
+          </h2>
+          <p className="muted settings-card-description">
+            A alteração de senha não está disponível nesta versão.
+          </p>
+        </section>
+
+        <section aria-labelledby="settings-session-title" className="panel settings-card">
+          <h2 className="settings-card-title" id="settings-session-title">
+            Sessão
+          </h2>
+          <p className="muted settings-card-description">
+            Sua conta está conectada neste dispositivo.
+          </p>
           <button className="button button-danger" onClick={sair} type="button">
             Sair da conta
           </button>
-        </div>
+        </section>
       </div>
-    </section>
+    </div>
   );
 }
