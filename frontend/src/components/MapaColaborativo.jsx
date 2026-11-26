@@ -36,7 +36,7 @@ export default function MapaColaborativo({
   const [validandoIds, setValidandoIds] = useState(() => new Set());
   const [origem, setOrigem] = useState(null);
   const [destino, setDestino] = useState(null);
-  const [perfil, setPerfil] = useState("cadeira_de_rodas");
+  const [perfil, setPerfil] = useState("pedestre");
   const [calculandoRota, setCalculandoRota] = useState(false);
   const [rotaCoordenadas, setRotaCoordenadas] = useState([]);
   const [detalhesRota, setDetalhesRota] = useState(null);
@@ -159,7 +159,7 @@ export default function MapaColaborativo({
       <div className="section-heading">
         <div>
           <p className="eyebrow">RECIFE · PERNAMBUCO</p>
-          <h1>{modoRota ? "Rotas acessíveis" : "Mapa colaborativo"}</h1>
+          <h1>{modoRota ? "Rotas a pé" : "Mapa colaborativo"}</h1>
           <p className="muted">
             Ocorrências reais reportadas pela comunidade.
           </p>
@@ -180,8 +180,8 @@ export default function MapaColaborativo({
             <div>
               <strong>Planejar trajeto</strong>
               <p className="muted">
-                Busque os endereços de origem e destino. O traçado considera
-                os obstáculos confirmados no mapa.
+                Busque os endereços de origem e destino. Relatos próximos são
+                exibidos como avisos, mas não alteram o traçado.
               </p>
             </div>
           </div>
@@ -209,9 +209,11 @@ export default function MapaColaborativo({
                 onChange={(event) => setPerfil(event.target.value)}
                 value={perfil}
               >
-                <option value="cadeira_de_rodas">Cadeira de rodas</option>
+                <option value="pedestre">Pedestre</option>
                 <option value="pe_lento">Pessoa com mobilidade reduzida</option>
-                <option value="geral">Geral</option>
+                <option disabled value="cadeira_de_rodas">
+                  Cadeira de rodas (indisponível)
+                </option>
               </select>
             </label>
             <button
@@ -222,6 +224,10 @@ export default function MapaColaborativo({
               {calculandoRota ? "Calculando..." : "Calcular rota"}
             </button>
           </div>
+          <p className="muted">
+            O perfil para cadeira de rodas está indisponível: a rota pedestre
+            pode incluir escadas e não verifica rampas ou calçadas contínuas.
+          </p>
         </form>
       )}
 
@@ -267,12 +273,15 @@ export default function MapaColaborativo({
             {detalhesRota.tempo_estimado_minutos} min estimados
           </span>
           <span>
-            {detalhesRota.obstaculos_proximos} obstáculos próximos · segurança{" "}
-            {detalhesRota.avaliar_seguranca}
+            {detalhesRota.obstaculos_proximos} relatos comunitários próximos
+            {" · "}perfil {detalhesRota.perfil === "pe_lento" ? "mais lento" : "pedestre"}
           </span>
           <small>
-            Rota a pé fornecida pelo OSRM; não substitui avaliação presencial
-            das condições de acessibilidade.
+            Rota calculada para caminhada com dados do OpenStreetMap. Não
+            garante calçadas contínuas ou acessibilidade: pode haver escadas,
+            e a ausência de relatos não significa que o trajeto esteja livre
+            de barreiras. O perfil para cadeira de rodas ainda não está
+            disponível.
           </small>
         </div>
       )}
@@ -293,8 +302,8 @@ export default function MapaColaborativo({
               pathOptions={{
                 color:
                   detalhesRota?.obstaculos_proximos > 0
-                    ? "#E53E3E"
-                    : "#00A86B",
+                    ? "#D97706"
+                    : "#1754A1",
                 weight: 6,
               }}
               positions={rotaCoordenadas}

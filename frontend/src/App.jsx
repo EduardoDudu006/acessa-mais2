@@ -10,7 +10,7 @@ const MENU_ITEMS = [
   ["Início", "⌂"],
   ["Mapa", "◎"],
   ["Registrar problema", "+"],
-  ["Rotas acessíveis", "↗"],
+  ["Rotas a pé", "↗"],
   ["Ocorrências", "▤"],
   ["Estatísticas", "▥"],
   ["Gamificação", "★"],
@@ -22,7 +22,7 @@ const MOBILE_PRIMARY_ITEMS = [
   ["Início", "⌂", "Início"],
   ["Mapa", "◎", "Mapa"],
   ["Registrar problema", "+", "Registrar"],
-  ["Rotas acessíveis", "↗", "Rotas"],
+  ["Rotas a pé", "↗", "Rotas"],
 ];
 const MOBILE_MORE_ITEMS = MENU_ITEMS.filter(
   ([item]) => !MOBILE_PRIMARY_ITEMS.some(([principal]) => principal === item),
@@ -320,7 +320,7 @@ export default function App() {
           {abaAtiva === "Registrar problema" && (
             <FormularioOcorrencia onSucesso={carregarDados} />
           )}
-          {abaAtiva === "Rotas acessíveis" && (
+          {abaAtiva === "Rotas a pé" && (
             <MapaColaborativo
               modoRota
               onPontosAtualizados={carregarDados}
@@ -412,7 +412,7 @@ function Dashboard({ nome, resumo, ocorrencias, carregando, onNavigate, onRefres
         />
       </section>
 
-      <section className="panel">
+      <section className="panel recent-panel">
         <div className="panel-heading">
           <div>
             <h2>Ocorrências recentes</h2>
