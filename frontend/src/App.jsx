@@ -705,7 +705,7 @@ function Configuracoes({ user, onNavigate, sair }) {
     <div className="page-stack settings-page">
       <div className="section-heading settings-heading">
         <div>
-          <p className="eyebrow">CONTA E PREFERÊNCIAS</p>
+          <p className="eyebrow">SUA CONTA</p>
           <h1>Configurações</h1>
           <p className="muted">
             Gerencie suas informações e a sessão neste dispositivo.
@@ -737,34 +737,25 @@ function Configuracoes({ user, onNavigate, sair }) {
           </button>
         </section>
 
-        <section aria-labelledby="settings-preferences-title" className="panel settings-card">
-          <h2 className="settings-card-title" id="settings-preferences-title">
-            Preferências
-          </h2>
-          <p className="muted settings-card-description">
-            Ainda não há preferências personalizáveis disponíveis.
-          </p>
-        </section>
-
-        <section aria-labelledby="settings-security-title" className="panel settings-card">
-          <h2 className="settings-card-title" id="settings-security-title">
-            Segurança
-          </h2>
-          <p className="muted settings-card-description">
-            A alteração de senha não está disponível nesta versão.
-          </p>
-        </section>
-
         <section aria-labelledby="settings-session-title" className="panel settings-card">
           <h2 className="settings-card-title" id="settings-session-title">
             Sessão
           </h2>
-          <p className="muted settings-card-description">
+          <p className="muted">
             Sua conta está conectada neste dispositivo.
           </p>
-          <button className="button button-danger" onClick={sair} type="button">
-            Sair da conta
-          </button>
+          <div className="settings-session-action">
+            <span className="muted">
+              Encerre sua sessão neste dispositivo.
+            </span>
+            <button
+              className="button button-danger"
+              onClick={sair}
+              type="button"
+            >
+              Sair da conta
+            </button>
+          </div>
         </section>
       </div>
     </div>
