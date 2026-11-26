@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import BuscaEndereco from "./BuscaEndereco";
 import SeletorLocalizacao from "./SeletorLocalizacao";
 import { apiRequest } from "../services/api";
+import MapaLocalizacaoAmpliado from "./MapaLocalizacaoAmpliado";
 
 const CATEGORIAS = [
   "Calçada irregular ou buraco",
@@ -17,6 +18,9 @@ export default function FormularioOcorrencia({ onSucesso }) {
   const [descricao, setDescricao] = useState("");
   const [localizacao, setLocalizacao] = useState(null);
   const [centroMapa, setCentroMapa] = useState(null);
+  const [mapaAmpliadoAberto, setMapaAmpliadoAberto] = useState(false);
+  const [localizacaoRascunho, setLocalizacaoRascunho] = useState(null);
+  const [centroMapaAmpliado, setCentroMapaAmpliado] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
@@ -39,26 +43,71 @@ export default function FormularioOcorrencia({ onSucesso }) {
     );
   }
 
-  function capturarLocalizacao() {
+  function selecionarLocalizacaoRascunho(local, origem = "endereco") {
+    setLocalizacaoRascunho(local);
+    setFeedback(null);
+    if (local && origem !== "mapa") {
+      setCentroMapaAmpliado([local.latitude, local.longitude]);
+    }
+  }
+
+  function selecionarPontoNoMapaAmpliado(latitude, longitude) {
+    selecionarLocalizacaoRascunho(
+      {
+        endereco: "Ponto selecionado no mapa",
+        latitude,
+        longitude,
+      },
+      "mapa",
+    );
+  }
+
+  function abrirMapaAmpliado() {
+    setFeedback(null);
+    setLocalizacaoRascunho(localizacao);
+    setCentroMapaAmpliado(
+      localizacao
+        ? [localizacao.latitude, localizacao.longitude]
+        : centroMapa,
+    );
+    setMapaAmpliadoAberto(true);
+  }
+
+  function confirmarLocalizacaoAmpliada() {
+    if (!localizacaoRascunho) return;
+    selecionarLocalizacao(localizacaoRascunho);
+    setMapaAmpliadoAberto(false);
+  }
+
+  function cancelarMapaAmpliado() {
+    setMapaAmpliadoAberto(false);
+    setLocalizacaoRascunho(null);
+  }
+
+  function capturarLocalizacao(
+    onSelect = selecionarLocalizacao,
+    onFeedback = setFeedback,
+    mensagemSucesso = "Sua localização atual foi selecionada.",
+  ) {
     if (!navigator.geolocation) {
-      setFeedback({
+      onFeedback({
         tipo: "error",
         mensagem: "Este navegador não disponibiliza geolocalização.",
       });
       return;
     }
 
-    setFeedback({ tipo: "info", mensagem: "Obtendo sua localização..." });
+    onFeedback({ tipo: "info", mensagem: "Obtendo sua localização..." });
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
-        selecionarLocalizacao({
+        onSelect({
           endereco: "Minha localização atual",
           latitude: coords.latitude,
           longitude: coords.longitude,
         });
-        setFeedback({
+        onFeedback({
           tipo: "success",
-          mensagem: "Sua localização atual foi selecionada.",
+          mensagem: mensagemSucesso,
         });
       },
       (error) => {
@@ -66,7 +115,7 @@ export default function FormularioOcorrencia({ onSucesso }) {
           error.code === error.PERMISSION_DENIED
             ? "Permita o acesso à localização ou busque um endereço."
             : "Não foi possível obter sua localização. Busque um endereço.";
-        setFeedback({ tipo: "error", mensagem });
+        onFeedback({ tipo: "error", mensagem });
       },
       { enableHighAccuracy: true, timeout: 15000 },
     );
@@ -153,6 +202,13 @@ export default function FormularioOcorrencia({ onSucesso }) {
             Clique no mapa ou arraste o marcador para indicar o local. Se
             preferir, busque um endereço ou use o GPS.
           </p>
+          <button
+            className="button button-location-picker"
+            onClick={abrirMapaAmpliado}
+            type="button"
+          >
+            Selecionar localização no mapa
+          </button>
           <SeletorLocalizacao
             centro={centroMapa}
             localizacao={localizacao}
@@ -175,6 +231,25 @@ export default function FormularioOcorrencia({ onSucesso }) {
           >
             {feedback.mensagem}
           </div>
+        )}
+
+        {mapaAmpliadoAberto && (
+          <MapaLocalizacaoAmpliado
+            centro={centroMapaAmpliado}
+            feedback={feedback}
+            localizacao={localizacaoRascunho}
+            onCancel={cancelarMapaAmpliado}
+            onConfirm={confirmarLocalizacaoAmpliada}
+            onSelect={selecionarPontoNoMapaAmpliado}
+            onSelectAddress={selecionarLocalizacaoRascunho}
+            onUseGps={() =>
+              capturarLocalizacao(
+                selecionarLocalizacaoRascunho,
+                setFeedback,
+                "Localização atual selecionada. Confirme para aplicá-la.",
+              )
+            }
+          />
         )}
 
         <button className="button button-primary" disabled={enviando}>

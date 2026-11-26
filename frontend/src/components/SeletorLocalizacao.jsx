@@ -36,10 +36,33 @@ function CentralizarMapa({ position }) {
   return null;
 }
 
+function ObservarRedimensionamentoMapa() {
+  const map = useMap();
+
+  useEffect(() => {
+    const atualizarTamanho = () => map.invalidateSize({ pan: false });
+    const frame = window.requestAnimationFrame(atualizarTamanho);
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(atualizarTamanho);
+
+    observer?.observe(map.getContainer());
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [map]);
+
+  return null;
+}
+
 export default function SeletorLocalizacao({
   localizacao,
   onSelect,
   centro,
+  zoomAnimation = true,
 }) {
   function moverMarcador(event) {
     const { lat, lng } = event.target.getLatLng();
@@ -52,12 +75,14 @@ export default function SeletorLocalizacao({
         center={POSICAO_RECIFE}
         scrollWheelZoom
         style={{ height: "100%", width: "100%" }}
+        zoomAnimation={zoomAnimation}
         zoom={13}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+        <ObservarRedimensionamentoMapa />
         <CapturarCliqueMapa
           onSelect={(latitude, longitude) =>
             onSelect(latitude, longitude, "mapa")

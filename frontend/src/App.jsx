@@ -1,4 +1,9 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useState,
+} from "react";
 import logoSidebar from "../assets/logo-acessa-mais.png";
 import Autenticacao from "./components/Autenticacao";
 import FormularioOcorrencia from "./components/FormularioOcorrencia";
@@ -27,6 +32,19 @@ const MOBILE_PRIMARY_ITEMS = [
 const MOBILE_MORE_ITEMS = MENU_ITEMS.filter(
   ([item]) => !MOBILE_PRIMARY_ITEMS.some(([principal]) => principal === item),
 );
+const APPEARANCE_STORAGE_KEY = "acessa_aparencia";
+const APPEARANCE_OPTIONS = [
+  { value: "claro", label: "Claro" },
+  { value: "escuro", label: "Escuro" },
+  { value: "automatico", label: "Automático" },
+];
+
+function lerAparenciaSalva() {
+  const aparencia = window.localStorage.getItem(APPEARANCE_STORAGE_KEY);
+  return APPEARANCE_OPTIONS.some((option) => option.value === aparencia)
+    ? aparencia
+    : "claro";
+}
 
 function lerSessaoSalva() {
   const token = window.localStorage.getItem("acessa_token");
@@ -53,6 +71,46 @@ export default function App() {
   const [ranking, setRanking] = useState([]);
   const [erroPainel, setErroPainel] = useState("");
   const [carregandoPainel, setCarregandoPainel] = useState(false);
+  const [aparencia, setAparencia] = useState(lerAparenciaSalva);
+  const [preferenciaSistemaEscura, setPreferenciaSistemaEscura] = useState(
+    () =>
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
+  const temaAtivo =
+    aparencia === "automatico"
+      ? preferenciaSistemaEscura
+        ? "dark"
+        : "light"
+      : aparencia === "escuro"
+        ? "dark"
+        : "light";
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = temaAtivo;
+  }, [temaAtivo]);
+
+  useEffect(() => {
+    window.localStorage.setItem(APPEARANCE_STORAGE_KEY, aparencia);
+  }, [aparencia]);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return undefined;
+
+    const consulta = window.matchMedia("(prefers-color-scheme: dark)");
+    const atualizarPreferenciaSistema = (event) => {
+      setPreferenciaSistemaEscura(event.matches);
+    };
+
+    if (consulta.addEventListener) {
+      consulta.addEventListener("change", atualizarPreferenciaSistema);
+      return () =>
+        consulta.removeEventListener("change", atualizarPreferenciaSistema);
+    }
+
+    consulta.addListener(atualizarPreferenciaSistema);
+    return () => consulta.removeListener(atualizarPreferenciaSistema);
+  }, []);
 
   const sair = useCallback(() => {
     window.localStorage.removeItem("acessa_token");
@@ -337,6 +395,8 @@ export default function App() {
           )}
           {abaAtiva === "Configurações" && (
             <Configuracoes
+              aparencia={aparencia}
+              onAparenciaChange={setAparencia}
               onNavigate={navegarPara}
               sair={sair}
               user={sessao.user}
@@ -700,7 +760,13 @@ function Perfil({ user, ocorrencias, nivel }) {
   );
 }
 
-function Configuracoes({ user, onNavigate, sair }) {
+function Configuracoes({
+  user,
+  onNavigate,
+  sair,
+  aparencia,
+  onAparenciaChange,
+}) {
   return (
     <div className="page-stack settings-page">
       <div className="section-heading settings-heading">
@@ -755,6 +821,46 @@ function Configuracoes({ user, onNavigate, sair }) {
             >
               Sair da conta
             </button>
+          </div>
+        </section>
+
+        <section
+          aria-labelledby="settings-appearance-title"
+          className="panel settings-card settings-appearance-card"
+        >
+          <div>
+            <h2
+              className="settings-card-title"
+              id="settings-appearance-title"
+            >
+              Aparência
+            </h2>
+            <p className="muted">
+              Escolha como o ACESSA+ deve ser exibido neste dispositivo.
+            </p>
+          </div>
+          <div
+            aria-label="Tema de exibição"
+            className="appearance-options"
+            role="radiogroup"
+          >
+            {APPEARANCE_OPTIONS.map((option) => (
+              <label
+                className={`appearance-option ${
+                  aparencia === option.value ? "selected" : ""
+                }`}
+                key={option.value}
+              >
+                <input
+                  checked={aparencia === option.value}
+                  name="appearance"
+                  onChange={() => onAparenciaChange(option.value)}
+                  type="radio"
+                  value={option.value}
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
           </div>
         </section>
       </div>
