@@ -7,6 +7,7 @@ export default function Autenticacao({ onLogin }) {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [senhaVisivel, setSenhaVisivel] = useState(false);
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
 
@@ -74,20 +75,32 @@ export default function Autenticacao({ onLogin }) {
               value={email}
             />
           </label>
-          <label>
-            Senha
-            <input
-              autoComplete={modoCadastro ? "new-password" : "current-password"}
-              minLength={modoCadastro ? 8 : 1}
-              onChange={(event) => setSenha(event.target.value)}
-              required
-              type="password"
-              value={senha}
-            />
+          <div className="password-field">
+            <label htmlFor="auth-password">Senha</label>
+            <span className="password-input-wrapper">
+              <input
+                id="auth-password"
+                autoComplete={modoCadastro ? "new-password" : "current-password"}
+                minLength={modoCadastro ? 8 : 1}
+                onChange={(event) => setSenha(event.target.value)}
+                required
+                type={senhaVisivel ? "text" : "password"}
+                value={senha}
+              />
+              <button
+                aria-label={senhaVisivel ? "Ocultar senha" : "Mostrar senha"}
+                aria-pressed={senhaVisivel}
+                className="password-visibility-toggle"
+                onClick={() => setSenhaVisivel((visivel) => !visivel)}
+                type="button"
+              >
+                {senhaVisivel ? "Ocultar" : "Mostrar"}
+              </button>
+            </span>
             {modoCadastro && (
               <span className="field-help">Mínimo de 8 caracteres.</span>
             )}
-          </label>
+          </div>
 
           {erro && (
             <div className="notice notice-error" role="alert">
@@ -108,6 +121,7 @@ export default function Autenticacao({ onLogin }) {
           className="text-button"
           onClick={() => {
             setErro("");
+            setSenhaVisivel(false);
             setModoCadastro((atual) => !atual);
           }}
           type="button"

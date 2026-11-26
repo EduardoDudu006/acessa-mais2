@@ -22,6 +22,7 @@ export default function OcorrenciaScreen() {
     const [nome, setNome] = useState("");
     const [email, setEmail] = useState("");
     const [senha, setSenha] = useState("");
+    const [senhaVisivel, setSenhaVisivel] = useState(false);
     const [erroAutenticacao, setErroAutenticacao] = useState("");
     const [categoria, setCategoria] = useState("Calçada irregular ou buraco");
     const [descricao, setDescricao] = useState("");
@@ -176,20 +177,37 @@ export default function OcorrenciaScreen() {
                         autoComplete="email"
                         keyboardType="email-address"
                     />
-                    <TextInput
-                        style={styles.input}
-                        value={senha}
-                        onChangeText={setSenha}
-                        placeholder={
-                            modoCadastro
-                                ? "Senha (mínimo 8 caracteres)"
-                                : "Senha"
-                        }
-                        secureTextEntry
-                        autoComplete={
-                            modoCadastro ? "new-password" : "current-password"
-                        }
-                    />
+                    <View style={styles.passwordInputRow}>
+                        <TextInput
+                            style={[styles.input, styles.passwordInput]}
+                            value={senha}
+                            onChangeText={setSenha}
+                            placeholder={
+                                modoCadastro
+                                    ? "Senha (mínimo 8 caracteres)"
+                                    : "Senha"
+                            }
+                            secureTextEntry={!senhaVisivel}
+                            autoComplete={
+                                modoCadastro ? "new-password" : "current-password"
+                            }
+                        />
+                        <TouchableOpacity
+                            accessibilityRole="button"
+                            accessibilityLabel={
+                                senhaVisivel ? "Ocultar senha" : "Mostrar senha"
+                            }
+                            accessibilityState={{ selected: senhaVisivel }}
+                            style={styles.passwordVisibilityToggle}
+                            onPress={() =>
+                                setSenhaVisivel((visivel) => !visivel)
+                            }
+                        >
+                            <Text style={styles.passwordVisibilityToggleText}>
+                                {senhaVisivel ? "Ocultar" : "Mostrar"}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
                     {Boolean(erroAutenticacao) && (
                         <Text style={styles.authError}>{erroAutenticacao}</Text>
                     )}
@@ -205,6 +223,7 @@ export default function OcorrenciaScreen() {
                         style={styles.authSwitch}
                         onPress={() => {
                             setErroAutenticacao("");
+                            setSenhaVisivel(false);
                             setModoCadastro((atual) => !atual);
                         }}
                     >
@@ -440,6 +459,26 @@ const styles = StyleSheet.create({
         padding: 12,
         fontSize: 14,
         color: "#2D3748",
+    },
+    passwordInputRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+    },
+    passwordInput: {
+        flex: 1,
+    },
+    passwordVisibilityToggle: {
+        minHeight: 44,
+        justifyContent: "center",
+        paddingHorizontal: 10,
+        borderRadius: 8,
+        backgroundColor: "#EAF1F8",
+    },
+    passwordVisibilityToggleText: {
+        color: "#0B3D91",
+        fontSize: 13,
+        fontWeight: "700",
     },
     coordsContainer: {
         backgroundColor: "#FFFFFF",
